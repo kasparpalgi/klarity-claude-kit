@@ -48,8 +48,19 @@ export function nextNumber(dir) {
 	return String(Math.max(0, ...used) + 1).padStart(3, '0');
 }
 
+/** Find the task directory used by this repo: `.claude/todo` if it exists, else `doc/todo`. */
+function taskDir(repoPath) {
+	const dotClaudeTodo = join(repoPath, '.claude', 'todo');
+	try {
+		readdirSync(dotClaudeTodo);
+		return dotClaudeTodo;
+	} catch {
+		return join(repoPath, 'doc', 'todo');
+	}
+}
+
 export function writeTaskFile(repoPath, card, runWith) {
-	const dir = join(repoPath, 'doc', 'todo');
+	const dir = taskDir(repoPath);
 	mkdirSync(dir, { recursive: true });
 
 	const number = nextNumber(dir);

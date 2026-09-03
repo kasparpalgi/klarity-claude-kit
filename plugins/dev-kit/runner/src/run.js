@@ -19,7 +19,12 @@ const log = (...args) => console.log(new Date().toISOString().slice(11, 19), ...
 
 /** `{owner, repo, full_name}` on the board, mapped to a local clone via config. */
 function repoPathFor(board) {
-	const github = typeof board.github === 'string' ? JSON.parse(board.github) : board.github;
+	let github;
+	try {
+		github = typeof board.github === 'string' ? JSON.parse(board.github) : board.github;
+	} catch {
+		return [null, null];
+	}
 	const fullName = github?.full_name ?? (github ? `${github.owner}/${github.repo}` : null);
 	return fullName ? [fullName, cfg.repos[fullName] ?? null] : [null, null];
 }
@@ -120,8 +125,12 @@ async function runCard(card) {
 			log(`✘ ${filename} exit ${code}`);
 		}
 	} catch (err) {
-		await report(card, listId(board, cfg.lists.blocked), `Runner error: ${err.message}`);
 		log(`✘ "${card.title}": ${err.message}`);
+		try {
+			await report(card, listId(board, cfg.lists.blocked), `Runner error: ${err.message}`);
+		} catch (reportErr) {
+			log(`  ! failed to move card to blocked: ${reportErr.message} — card left in Doing`);
+		}
 	}
 }
 

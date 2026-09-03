@@ -5,6 +5,11 @@ import { promisify } from 'node:util';
 
 const run = promisify(execFile);
 
+// Strip runner-only secrets so subprocesses cannot read them.
+const childEnv = Object.fromEntries(
+	Object.entries(process.env).filter(([k]) => k !== 'HASURA_ADMIN_SECRET')
+);
+
 const TIERS = {
 	opus: { model: 'opus', effort: 'high', label: 'Opus 5 / high' },
 	sonnet: { model: 'sonnet', effort: 'medium', label: 'Sonnet 5 / medium' },
@@ -33,7 +38,8 @@ export async function classify(text) {
 
 	try {
 		const { stdout } = await run('claude', ['-p', PROMPT + text, '--model', 'haiku'], {
-			timeout: 60_000
+			timeout: 60_000,
+			env: childEnv
 		});
 		const word = /\b(opus|sonnet|haiku)\b/i.exec(stdout);
 		if (word) return TIERS[word[1].toLowerCase()];

@@ -7,6 +7,7 @@ export function makeClient(endpoint, adminSecret) {
 			headers: { 'content-type': 'application/json', 'x-hasura-admin-secret': adminSecret },
 			body: JSON.stringify({ query, variables })
 		});
+		if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
 		const body = await res.json();
 		if (body.errors) throw new Error(body.errors.map((e) => e.message).join('; '));
 		return body.data;

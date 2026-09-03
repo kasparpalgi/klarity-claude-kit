@@ -52,6 +52,62 @@ shared instance it can see all 49 users' boards — so the query is scoped to th
 whatever their owner typed: `Sooner`, `Töös`, `in Arbeit`. Run `npm run check` and it prints
 any column it cannot find on each board.
 
+## Connecting a new project
+
+Each entry in `repos` links one Kanban board to one local git clone. To add a project:
+
+**1. Find the `owner/repo` key.**
+Open the board in todzz.eu → Board settings → GitHub integration. The repo name shown
+there (e.g. `kasparpalgi/my-new-app`) is the key. It must match exactly — the runner
+uses it to filter the admin-secret query to only your boards.
+
+**2. Add the entry to `config.json`:**
+
+```json
+"repos": {
+  "kasparpalgi/my-new-app": "~/Documents/GitHub/my-new-app"
+}
+```
+
+`~/` is expanded at runtime, so relative-to-home paths work fine.
+
+**3. Check the column names.**
+The runner needs four columns on every connected board: a TODO inbox, a Doing/in-progress
+column, a Review column, and a Blocked column. Their names are free text — boards use
+whatever the owner typed. The `lists` key in `config.json` is shared across all boards,
+so use whichever names your boards have in common (or rename the columns to match).
+
+```json
+"lists": {
+  "todo":    "TODO",
+  "doing":   "Doing",
+  "review":  "Review",
+  "blocked": "Blocked"
+}
+```
+
+**4. Verify:**
+
+```bash
+HASURA_ADMIN_SECRET=… npm run check
+```
+
+Cards in your TODO column print with the local path. Missing columns are listed — create
+them on the board (or rename existing ones) and re-run until clean.
+
+**5. Restart the runner** so it picks up the new config:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/eu.todzz.kanban-runner
+# or, if running manually: Ctrl-C and npm start
+```
+
+**Task file location.** The runner writes to `.claude/todo/` if that directory exists in
+the repo, otherwise `doc/todo/`. Both are auto-created on first use. Match whichever
+directory your repo's `/todo` skill reads from.
+
+---
+
 ## Model & effort
 
 The card decides, if it says so: a line like `Run with: opus` (or `sonnet` / `haiku`)

@@ -71,3 +71,41 @@ tier is written as the task file's `> Run with:` line, which is what `/todo` exp
 - **Credentials live here, never in the Kanban app.** The admin secret is an env var on
   this machine; repo push rights are the local git config.
 - Requires Node ≥ 20 (built-in `fetch`) and `claude` on `PATH`. No npm dependencies.
+
+## Auto-start with launchd (macOS)
+
+Keep the runner alive across reboots and logins with a launchd user agent.
+
+```bash
+# 1. Copy and edit the template
+cp launchd.plist.example ~/Library/LaunchAgents/eu.todzz.kanban-runner.plist
+# Replace every YOUR_NAME and REPLACE_WITH_YOUR_SECRET in the plist.
+# Also verify: which node  (update ProgramArguments[0] if different)
+
+# 2. Load it
+launchctl load ~/Library/LaunchAgents/eu.todzz.kanban-runner.plist
+
+# 3. Start immediately (without waiting for next login)
+launchctl kickstart -k gui/$(id -u)/eu.todzz.kanban-runner
+```
+
+**Tail the log:**
+
+```bash
+tail -f ~/Library/Logs/kanban-runner.log
+```
+
+**Stop / disable:**
+
+```bash
+launchctl unload ~/Library/LaunchAgents/eu.todzz.kanban-runner.plist
+```
+
+**Restart after editing `config.json`:**
+
+```bash
+launchctl kickstart -k gui/$(id -u)/eu.todzz.kanban-runner
+```
+
+The `-k` flag kills any running instance first so restarts are clean.
+The plist file (with your secret) is not committed — it lives only in `~/Library/LaunchAgents/`.

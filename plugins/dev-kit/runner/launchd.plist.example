@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>eu.todzz.kanban-runner</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <!-- Replace with: which node -->
+    <string>/opt/homebrew/bin/node</string>
+    <!-- Replace with the absolute path to this repo's src/run.js -->
+    <string>/Users/YOUR_NAME/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner/src/run.js</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HASURA_ADMIN_SECRET</key>
+    <string>REPLACE_WITH_YOUR_SECRET</string>
+    <!-- Node needs HOME so it can find .npmrc / .nvm / etc. -->
+    <key>HOME</key>
+    <string>/Users/YOUR_NAME</string>
+    <key>PATH</key>
+    <!-- claude must be on PATH — adjust if you install it elsewhere -->
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <!-- Must be the runner directory so config.json is found -->
+  <string>/Users/YOUR_NAME/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOUR_NAME/Library/Logs/kanban-runner.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/YOUR_NAME/Library/Logs/kanban-runner.log</string>
+
+  <key>ThrottleInterval</key>
+  <!-- launchd waits at least 10 s before restarting a crashed runner -->
+  <integer>10</integer>
+</dict>
+</plist>

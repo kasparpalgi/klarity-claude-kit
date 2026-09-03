@@ -27,14 +27,21 @@ function repoPathFor(board) {
 const listId = (board, name) => board.lists.find((l) => l.name === name)?.id ?? null;
 
 /** `%(owner/a|owner/b)%` — the SIMILAR TO pattern that keeps the query to our own boards. */
-const reposPattern = `%(${Object.keys(cfg.repos).join('|')})%`;
+// Escape SQL SIMILAR TO metacharacters in repo names (|, (, ), *, +, ?, {, }, %, _, \).
+const escapeSimilar = (s) => s.replace(/[|()\\*+?{}\[\]%_]/g, '\\$&');
+const reposPattern = `%(${Object.keys(cfg.repos).map(escapeSimilar).join('|')})%`;
 
 /** One card per tick: a column can hold 90 cards, and each one spawns a Claude session. */
 const pending = (limit) => gql(PENDING, { list: cfg.lists.todo, repos: reposPattern, limit });
 
+// Strip runner-only secrets before passing env to child processes.
+const childEnv = Object.fromEntries(
+	Object.entries(process.env).filter(([k]) => k !== 'HASURA_ADMIN_SECRET')
+);
+
 function shell(command, args, cwd) {
 	return new Promise((resolve) => {
-		const child = spawn(command, args, { cwd, env: process.env });
+		const child = spawn(command, args, { cwd, env: childEnv });
 		let output = '';
 		const collect = (chunk) => {
 			output += chunk;

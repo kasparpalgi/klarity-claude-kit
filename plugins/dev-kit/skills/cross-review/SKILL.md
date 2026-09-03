@@ -22,7 +22,7 @@ llm keys set gemini              # paste your key from ai.google.dev (free tier 
 
 ```bash
 BASE=${1:-$(git merge-base HEAD origin/main)}
-git diff "$BASE" | llm -m gemini-2.0-flash \
+git diff "$BASE" | llm -m gemini-3.1-flash-lite \
   "You are a senior code reviewer. Review this diff for: correctness bugs, race conditions,
    error handling gaps, security issues. Be specific. Output a numbered list of findings
    only — no preamble, no summary."

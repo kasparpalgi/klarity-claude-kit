@@ -22,12 +22,32 @@ push. Other projects pick it up on `/plugin` update — no per-repo copies to ke
 
 ## Skills
 
-| Skill             | Invoked   | Purpose                                              |
-| ----------------- | --------- | ---------------------------------------------------- |
-| `/todo <n>`       | by you    | Run a numbered task from `doc/todo/`                 |
-| `/plan <request>` | by you    | Write a new numbered task file, don't build          |
-| `/verify`         | by you    | Run the project's verification chain                 |
-| `research-first`  | by Claude | Look up docs before coding against an unfamiliar API |
+| Skill              | Invoked   | Purpose                                              |
+| ------------------ | --------- | ---------------------------------------------------- |
+| `/todo <n>`        | by you    | Run a numbered task from `doc/todo/`                 |
+| `/plan <request>`  | by you    | Write a new numbered task file, don't build          |
+| `/verify`          | by you    | Run the project's verification chain                 |
+| `/cross-review`    | by you    | Pipe diff to a second-vendor AI for independent bugs |
+| `research-first`   | by Claude | Look up docs before coding against an unfamiliar API |
+
+## Parallel worktrees (tmux layout)
+
+Run N independent Claude agents on the same repo without branch conflicts:
+
+```bash
+# Create worktrees — one per agent, each on its own branch
+git worktree add ../my-repo-feat1 -b feat/agent-1
+git worktree add ../my-repo-feat2 -b feat/agent-2
+
+# tmux: one pane per worktree + one reviewer pane
+tmux new-session -s dev \; \
+  send-keys "cd ../my-repo-feat1 && claude" Enter \; \
+  split-window -h \; send-keys "cd ../my-repo-feat2 && claude" Enter \; \
+  split-window -v \; send-keys "cd <main-repo> && claude" Enter
+```
+
+The reviewer pane starts in the main repo and is read-only — no two agents touch the same
+file. Clean up: `git worktree remove ../my-repo-feat1 --force`.
 
 ## Runner
 

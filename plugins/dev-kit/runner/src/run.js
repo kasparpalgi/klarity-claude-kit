@@ -13,12 +13,18 @@ import { loadConfig } from "./config.js";
 
 const exec = promisify(execFile);
 const cfg = loadConfig();
+const interactive = process.argv.includes("--interactive");
 const log = (...args) =>
   console.log(new Date().toISOString().slice(11, 19), ...args);
 
 function shell(cmd, args, cwd) {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd, env: process.env });
+    const stdin = interactive ? "inherit" : "ignore";
+    const child = spawn(cmd, args, {
+      cwd,
+      env: process.env,
+      stdio: [stdin, "pipe", "pipe"],
+    });
     let output = "";
     const collect = (c) => {
       output += c;
@@ -93,19 +99,16 @@ async function runRepo(repoName, repoPath) {
   log(`▶ ${repoName} ${filename} (${tier.label})`);
 
   const { stdout: before } = await git(["rev-parse", "HEAD"], repoPath);
-  const { code } = await shell(
-    "claude",
-    [
-      "-p",
-      `/todo ${number}`,
-      "--model",
-      tier.model,
-      "--effort",
-      tier.effort,
-      "--dangerously-skip-permissions",
-    ],
-    repoPath,
-  );
+  const claudeArgs = [
+    "-p",
+    `/todo ${number}`,
+    "--model",
+    tier.model,
+    "--effort",
+    tier.effort,
+  ];
+  if (!interactive) claudeArgs.push("--dangerously-skip-permissions");
+  const { code } = await shell("claude", claudeArgs, repoPath);
   const { stdout: after } = await git(["rev-parse", "HEAD"], repoPath);
 
   if (code !== 0) {

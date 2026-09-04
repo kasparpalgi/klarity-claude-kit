@@ -1,12 +1,5 @@
 {
-	"endpoint": "http://localhost:3001/v1/graphql",
-	"pollSeconds": 20,
-	"lists": {
-		"todo": "TODO",
-		"doing": "Doing",
-		"review": "Review",
-		"blocked": "Blocked"
-	},
+	"pollSeconds": 60,
 	"repos": {
 		"klarity/svelte-hasura-boilerplate": "~/Documents/GitHub/svelte-hasura-boilerplate",
 		"klarity/svelte-todo-kanban": "~/Documents/GitHub/svelte-todo-kanban"

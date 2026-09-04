@@ -35,9 +35,19 @@ async function git(args, cwd) {
   return exec("git", args, { cwd });
 }
 
+function todoDir(repoPath) {
+  const claude = join(repoPath, ".claude", "todo");
+  try {
+    readdirSync(claude);
+    return claude;
+  } catch {
+    return join(repoPath, "doc", "todo");
+  }
+}
+
 /** Find first TODO file with no matching DONE (same NNN prefix). */
 function findPending(repoPath) {
-  const dir = join(repoPath, "doc", "todo");
+  const dir = todoDir(repoPath);
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true }).filter((e) =>
@@ -78,7 +88,7 @@ async function runRepo(repoName, repoPath) {
   if (!pending) return false;
 
   const { name: filename, number } = pending;
-  const content = readFileSync(join(repoPath, "doc", "todo", filename), "utf8");
+  const content = readFileSync(join(todoDir(repoPath), filename), "utf8");
   const tier = explicitTier(content) ?? (await classify(content.slice(0, 500)));
   log(`▶ ${repoName} ${filename} (${tier.label})`);
 

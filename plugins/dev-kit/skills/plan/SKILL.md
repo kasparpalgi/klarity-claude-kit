@@ -9,9 +9,10 @@ disable-model-invocation: true
 
 Research first, then write **one file** — do not implement.
 
-1. Read the codebase parts the request touches. Check `doc/todo/` for related past tasks.
-2. Pick the next free number in `doc/todo/`.
-3. Write `doc/todo/<NNN>-<camelCaseName>-TODO.md`:
+1. Read the codebase parts the request touches. Find the task folder: use `.claude/todo/`
+   if it exists, otherwise `doc/todo/`. Check it for related past tasks.
+2. Pick the next free number in the task folder.
+3. Write `<task-folder>/<NNN>-<camelCaseName>-TODO.md`:
 
 ```markdown
 > Run with: <Opus 5 | Sonnet 5 | Haiku 4.5> / <low | medium | high>

@@ -12,7 +12,8 @@ original prompt at the top and the outcome at the bottom. Never rewrite the top 
 
 ## 1. Load
 
-Find the file in `doc/todo/` whose name starts with `$ARGUMENTS`. Read it.
+Find the task folder: use `.claude/todo/` if it exists, otherwise `doc/todo/`.
+Find the file whose name starts with `$ARGUMENTS` in that folder. Read it.
 
 ## 2. Classify
 

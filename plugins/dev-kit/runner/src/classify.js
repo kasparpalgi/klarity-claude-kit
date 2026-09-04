@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 
 const TIERS = {
+  fable: { model: "fable", effort: "high", label: "Fable 5 / high" },
   opus: { model: "opus", effort: "high", label: "Opus 5 / high" },
   sonnet: { model: "sonnet", effort: "medium", label: "Sonnet 5 / medium" },
   haiku: { model: "haiku", effort: "low", label: "Haiku 4.5 / low" },
@@ -13,7 +14,7 @@ const TIERS = {
 
 const PROMPT = `Classify this development task by how much model it needs.
 Answer with exactly one word, nothing else:
-opus - hard architecture, multi-system design, security-sensitive work
+fable - hard architecture, multi-system design, security-sensitive work
 sonnet - a normal feature, refactor or bugfix
 haiku - a mechanical edit: rename, copy change, config tweak
 
@@ -22,7 +23,7 @@ Task:
 
 /** The card may say it outright: "Run with: Opus 5 / high" or just "opus". */
 export function explicitTier(text) {
-  const named = /run with:\s*(opus|sonnet|haiku)/i.exec(text || "");
+  const named = /run with:\s*(fable|opus|sonnet|haiku)/i.exec(text || "");
   return named ? TIERS[named[1].toLowerCase()] : null;
 }
 
@@ -39,7 +40,7 @@ export async function classify(text) {
         timeout: 60_000,
       },
     );
-    const word = /\b(opus|sonnet|haiku)\b/i.exec(stdout);
+    const word = /\b(fable|opus|sonnet|haiku)\b/i.exec(stdout);
     if (word) return TIERS[word[1].toLowerCase()];
   } catch {
     // classifier is a nicety, never a blocker

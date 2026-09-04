@@ -17,6 +17,20 @@ const interactive = process.argv.includes("--interactive");
 const log = (...args) =>
   console.log(new Date().toISOString().slice(11, 19), ...args);
 
+const PUSHBULLET_TOKEN = process.env.PUSHBULLET_ACCESS_TOKEN;
+
+async function notify(title, body) {
+  if (!PUSHBULLET_TOKEN) return;
+  fetch("https://api.pushbullet.com/v2/pushes", {
+    method: "POST",
+    headers: {
+      "Access-Token": PUSHBULLET_TOKEN,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ type: "note", title, body }),
+  }).catch(() => {});
+}
+
 function shell(cmd, args, cwd) {
   return new Promise((resolve) => {
     const stdin = interactive ? "inherit" : "ignore";
@@ -113,6 +127,7 @@ async function runRepo(repoName, repoPath) {
 
   if (code !== 0) {
     log(`✘ ${filename} exit ${code}`);
+    await notify("Runner ✘", `${repoName} ${filename} exit ${code}`);
     return true;
   }
 
@@ -122,6 +137,7 @@ async function runRepo(repoName, repoPath) {
   } else {
     log(`✔ ${filename} — done (uncommitted; CLAUDE.md may forbid committing)`);
   }
+  await notify("Runner ✔", `${repoName} ${filename}`);
   return true;
 }
 

@@ -18,6 +18,8 @@
   <dict>
     <key>HASURA_ADMIN_SECRET</key>
     <string>REPLACE_WITH_YOUR_SECRET</string>
+    <key>PUSHBULLET_ACCESS_TOKEN</key>
+    <string>REPLACE_OR_REMOVE</string>
     <!-- Node needs HOME so it can find .npmrc / .nvm / etc. -->
     <key>HOME</key>
     <string>/Users/YOUR_NAME</string>

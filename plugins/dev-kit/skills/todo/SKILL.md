@@ -55,6 +55,11 @@ Append to the task file:
 **Deviations** — changes from the plan, or "None"
 ```
 
+**Never skip this step.** If context is running low, write a minimal Results section
+(Summary + Files changed) *first* and fill in Verification afterwards — a short Results
+beats none. The runner also saves the full session transcript next to the task file as
+`NNN-slug.log`, but that is a debugging aid, not a substitute for Results.
+
 Then rename the file to describe itself:
 `008-aiWorkflow-DONE.md` (complete) or `008-aiWorkflow-TODO.md` (needs a human).
 

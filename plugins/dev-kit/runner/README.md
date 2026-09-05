@@ -110,7 +110,12 @@ Each tick (one per `pollSeconds`):
 5. Read the `> Run with:` frontmatter line (written by task-014). Classify with a
    cheap Claude call if the line is missing; default to `Sonnet 5 / medium` on failure.
 6. Run `claude -p "/todo NNN" --model … --effort …`.
-7. If HEAD advanced (i.e. `/todo` committed), push to `origin main`.
+7. Save the full session output next to the task file as `NNN-slug.log`, and push the
+   last 15 lines to the phone (success and failure alike).
+8. If HEAD advanced (i.e. `/todo` committed), push to `origin main`.
+
+Logs are gitignored: the first run in a repo commits `*.log` to the task folder's
+`.gitignore`, so transcripts never dirty the tree or reach the remote.
 
 **One task per tick.** The loop returns after the first task it runs, so repos queue
 naturally.

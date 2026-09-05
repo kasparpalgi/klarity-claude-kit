@@ -5,7 +5,7 @@
  */
 
 import { execFile, spawn } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { classify, explicitTier } from "./classify.js";
@@ -29,6 +29,24 @@ async function notify(title, body) {
     },
     body: JSON.stringify({ type: "note", title, body }),
   }).catch(() => {});
+}
+
+/** Last n lines, capped so a Pushbullet note stays readable. */
+function tail(output, lines = 15) {
+  return output.trimEnd().split("\n").slice(-lines).join("\n").slice(-1500);
+}
+
+/**
+ * Keep agent logs out of git so they never dirty the tree — and commit the
+ * rule itself, or the untracked .gitignore would dirty it instead. Once per repo.
+ */
+async function ignoreLogs(dir, repoPath) {
+  const file = join(dir, ".gitignore");
+  const cur = existsSync(file) ? readFileSync(file, "utf8") : "";
+  if (cur.includes("*.log")) return;
+  writeFileSync(file, cur + "*.log\n");
+  await git(["add", file], repoPath);
+  await git(["commit", "-m", "chore: ignore runner task logs", file], repoPath);
 }
 
 function shell(cmd, args, cwd) {
@@ -108,7 +126,10 @@ async function runRepo(repoName, repoPath) {
   if (!pending) return false;
 
   const { name: filename, number } = pending;
-  const content = readFileSync(join(todoDir(repoPath), filename), "utf8");
+  const dir = todoDir(repoPath);
+  await ignoreLogs(dir, repoPath);
+  const logFile = join(dir, filename.replace(/-TODO\.md$/i, "") + ".log");
+  const content = readFileSync(join(dir, filename), "utf8");
   const tier = explicitTier(content) ?? (await classify(content.slice(0, 500)));
   log(`▶ ${repoName} ${filename} (${tier.label})`);
 
@@ -122,12 +143,18 @@ async function runRepo(repoName, repoPath) {
     tier.effort,
   ];
   if (!interactive) claudeArgs.push("--dangerously-skip-permissions");
-  const { code } = await shell("claude", claudeArgs, repoPath);
+  const { code, output } = await shell("claude", claudeArgs, repoPath);
   const { stdout: after } = await git(["rev-parse", "HEAD"], repoPath);
+
+  writeFileSync(logFile, output);
+  log(`  log → ${logFile}`);
 
   if (code !== 0) {
     log(`✘ ${filename} exit ${code}`);
-    await notify("Runner ✘", `${repoName} ${filename} exit ${code}`);
+    await notify(
+      "Runner ✘",
+      `${repoName} ${filename} exit ${code}\n\n${tail(output)}`,
+    );
     return true;
   }
 
@@ -137,7 +164,7 @@ async function runRepo(repoName, repoPath) {
   } else {
     log(`✔ ${filename} — done (uncommitted; CLAUDE.md may forbid committing)`);
   }
-  await notify("Runner ✔", `${repoName} ${filename}`);
+  await notify("Runner ✔", `${repoName} ${filename}\n\n${tail(output)}`);
   return true;
 }
 

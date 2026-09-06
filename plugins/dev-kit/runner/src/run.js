@@ -129,9 +129,15 @@ async function runRepo(repoName, repoPath) {
   const left = await dirtyPaths(repoPath);
   const renamed = !listPending(repoPath, dir).some((p) => p.number === number);
   if (!renamed || left.length) {
+    const moved = after.trim() !== before.trim();
     const why = [
       renamed ? null : `${filename} was never renamed to -DONE`,
       left.length ? `uncommitted: ${left.slice(0, 6).join(", ")}` : null,
+      // Clean tree + un-renamed file is almost always "the agent decided it was
+      // done and walked past step 6" — the work is there, only the rename is not.
+      !renamed && !left.length
+        ? `tree is clean${moved ? `, it committed ${after.trim().slice(0, 8)}` : ""} — probably finished, just not renamed; rename it by hand`
+        : null,
     ].filter(Boolean);
     log(`⚠ ${filename} — ran but did not finish: ${why.join("; ")}`);
     await notify(

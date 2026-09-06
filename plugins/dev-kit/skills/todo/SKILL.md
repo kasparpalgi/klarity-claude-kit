@@ -10,6 +10,12 @@ disable-model-invocation: true
 The `doc/todo/` folder is the prompt history: one markdown file per request, holding the
 original prompt at the top and the outcome at the bottom. Never rewrite the top part.
 
+**The rename is the state.** The runner reads the filename, not your reply: a file still
+called `-TODO.md` means "not finished", so it re-runs the task, hits the same ending, and
+parks it as stuck — a dead queue slot. However this run ends — you built it, it turned out
+to be already done, there is nothing to build, or a human has to take over — you finish by
+appending `## Results` and renaming the file (step 6). No exit skips that.
+
 ## 1. Load
 
 Find the task folder: use `.claude/todo/` if it exists, otherwise `doc/todo/`.
@@ -21,6 +27,7 @@ Find the file whose name starts with `$ARGUMENTS` in that folder. Read it.
 | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A concrete, actionable task                         | Execute it (step 3 onward)                                                                                                                                                                                              |
 | Planning / open questions / bigger than one session | Answer the questions in the file, then split it into new numbered task files in `doc/todo/` (next free numbers). Do a reasonable slice of real work this session. Steps 3–6 apply only to the slice you actually built. |
+| Already done, obsolete, or impossible               | Do **not** just stop and explain. Skip to step 6: a `## Results` section saying what you found — naming the commit that already did it, if there is one — and the rename. |
 
 Every task file you create starts with a frontmatter line naming the model and effort:
 `> Run with: Opus 5 / high` — hard architecture; `Sonnet 5 / medium` — normal features;
@@ -44,7 +51,7 @@ task instead of leaving the complexity in.
 
 Run `/verify` (or the `verify` skill). Only the checks that match what you changed.
 
-## 6. Log the outcome
+## 6. Log the outcome — every exit path ends here
 
 Append to the task file:
 
@@ -57,7 +64,16 @@ Append to the task file:
 **Deviations** — changes from the plan, or "None"
 ```
 
-**Never skip this step.** If context is running low, write a minimal Results section
+**Never skip this step**, including on the exits that do not feel like finishing:
+
+| How the run ended                    | Rename to  | Results says                                          |
+| ------------------------------------ | ---------- | ----------------------------------------------------- |
+| You built it                         | `-DONE.md` | what you built                                        |
+| It was already done before you began | `-DONE.md` | "already complete in `<commit>`", and what you checked |
+| Nothing left to build / obsolete     | `-DONE.md` | why there is nothing to do                            |
+| A human must decide or act           | `-TODO.md` | what you did, what is blocked, what you need          |
+
+If context is running low, write a minimal Results section
 (Summary + Files changed) *first* and fill in Verification afterwards — a short Results
 beats none. The runner also saves the full session transcript next to the task file as
 `NNN-slug.log`, but that is a debugging aid, not a substitute for Results.

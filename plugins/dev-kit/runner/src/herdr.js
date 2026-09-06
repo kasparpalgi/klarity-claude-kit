@@ -30,7 +30,11 @@ export async function herdrUp() {
   }
 }
 
-/** Only one task runs at a time, so any surviving task-* agent is a crash leak. */
+/**
+ * Only one task runs at a time — `tick()` is awaited, launchd keeps one daemon —
+ * so any surviving task-* agent is a crash leak. Reaping a *live* pane takes a
+ * second runner: don't `--once` by hand while the daemon holds a task.
+ */
 async function reap() {
   const { agents } = await hx(["agent", "list"]);
   for (const a of agents) {

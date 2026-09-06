@@ -15,7 +15,7 @@ Research first, then write **one file** — do not implement.
 3. Write `<task-folder>/<NNN>-<camelCaseName>-TODO.md`:
 
 ```markdown
-> Run with: <Opus 5 | Sonnet 5 | Haiku 4.5> / <low | medium | high>
+> Run with: <Opus 4.6|4.8|5 | Sonnet 4.6|5 | Haiku 4.5> / <low | medium | high | xhigh | max>
 
 # <Task name>
 

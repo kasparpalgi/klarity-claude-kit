@@ -24,7 +24,9 @@ Find the file whose name starts with `$ARGUMENTS` in that folder. Read it.
 
 Every task file you create starts with a frontmatter line naming the model and effort:
 `> Run with: Opus 5 / high` — hard architecture; `Sonnet 5 / medium` — normal features;
-`Haiku 4.5 / low` — mechanical edits. Size each file to one session.
+`Haiku 4.5 / low` — mechanical edits. The version is honoured exactly, so `Sonnet 4.6`
+runs Sonnet 4.6; effort is any of low, medium, high, xhigh, max. Size each file to one
+session.
 
 ## 3. Build
 

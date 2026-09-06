@@ -215,33 +215,35 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 The task file's first line decides:
 
 ```
-> Run with: Opus 5 / high
+> Run with: Opus 4.8 / xhigh
 ```
 
-**Family name** — `fable`, `opus`, `sonnet` or `haiku` — is the only part that selects a
-model. A version number after it is ignored on purpose: the runner passes `--model
-sonnet`, which always resolves to the current Sonnet, so `Sonnet 4.6 / low` and
-`Sonnet 5 / low` do the same thing. Writing a version that does not exist silently gets
-you the current one.
+**Family + version** together select the model. The version is *not* decoration: the
+runner passes the full model id (`--model claude-opus-4-8`), so `Sonnet 4.6` really runs
+Sonnet 4.6. A bare family name means that family's latest. A version that is not in the
+table falls back to the family's latest rather than failing the run.
 
-**Effort** after the slash — `low`, `medium`, `high` — is passed through as `--effort`.
-Omit it and the tier's default applies.
+**Effort** after the slash — `low`, `medium`, `high`, `xhigh`, `max` — is passed through
+as `--effort`. Omit it and the family's default applies. Effort and version are
+independent: `Sonnet 4.6 / max` and `Opus 5 / low` are both legal.
 
-The four tiers and their defaults are defined in one place, `src/classify.js`:
+Everything lives in one table, `FAMILIES` in `src/classify.js`:
 
-| Write | Model | Default effort |
-| ----- | ----- | -------------- |
-| `Fable 5 / high`   | `fable`  | high |
-| `Opus 5 / high`    | `opus`   | high |
-| `Sonnet 5 / medium`| `sonnet` | medium |
-| `Haiku 4.5 / low`  | `haiku`  | low |
+| Family   | Versions           | Latest | Default effort |
+| -------- | ------------------ | ------ | -------------- |
+| `fable`  | 5.1                | 5.1    | high           |
+| `opus`   | 4.6, 4.8, 5        | 5      | high           |
+| `sonnet` | 4.6, 5             | 5      | medium         |
+| `haiku`  | 4.5                | 4.5    | low            |
 
-Edit that table in `classify.js` to add a tier or change a default. With no `Run with:`
-line at all, a cheap haiku call classifies the task and falls back to `Sonnet 5 / medium`.
+Add a version by putting its model id in that family's `versions`.
 
-Task-014 writes the line from the card, so today the model is chosen by typing it as the
-card's first line. A per-card model dropdown on the board would be better — filed as
-task-161 in `svelte-todo-kanban`.
+With no `Run with:` line at all, a cheap haiku call picks a *family* (version and effort
+stay at that family's defaults) and falls back to `Sonnet 5 / medium`. Fable is never
+auto-chosen — it bills usage credits, so it has to be asked for by name.
+
+Task-014 writes the line from the card's model/effort fields, so the tier is normally
+chosen from the board rather than typed.
 
 ## CLI flags
 

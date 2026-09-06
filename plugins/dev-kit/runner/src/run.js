@@ -70,10 +70,10 @@ async function runTask({ repoName, filename, number, repoPath, model }) {
 
 async function runRepo(repoName, repoPath) {
   const dir = todoDir(repoPath);
-  const { reason, notes = [], handoff } = await preflight(repoPath, dir);
+  const { reason, kind, notes = [], handoff } = await preflight(repoPath, dir);
   if (reason) {
     log(`skip ${repoName} — ${reason}`);
-    if (state.setBlocked(repoName, reason))
+    if (state.setBlocked(repoName, kind ?? reason))
       await notify("Runner ⛔ blocked", `${repoName}\n\n${reason}`);
     return false;
   }

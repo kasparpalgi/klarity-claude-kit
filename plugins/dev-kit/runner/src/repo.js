@@ -50,9 +50,13 @@ export async function ignoreLogs(dir, cwd) {
 }
 
 /**
- * Returns `{ reason }` when the repo must be skipped, otherwise `{ notes,
+ * Returns `{ reason, kind }` when the repo must be skipped, otherwise `{ notes,
  * handoff }`. `handoff` names a task number whose work was left on a branch:
  * it has been pushed, so the runner must not run that number again.
+ *
+ * `kind` is the *stable* half of the reason. A dirty tree grows a file at a time
+ * while someone works in it, and dedup on the full message meant one push per new
+ * file — a flood for what is one unchanged condition.
  */
 export async function preflight(cwd, taskDir) {
   const dirty = await dirtyPaths(cwd);
@@ -63,16 +67,19 @@ export async function preflight(cwd, taskDir) {
       cwd,
     );
   } else if (dirty.length) {
-    return { reason: `dirty working tree — ${dirty.slice(0, 6).join(", ")}` };
+    return { kind: "dirty", reason: `dirty working tree — ${dirty.slice(0, 6).join(", ")}` };
   }
 
   if (!(await ok(["fetch", "origin"], cwd)))
-    return { reason: "cannot reach origin (fetch failed)" };
+    return { kind: "fetch", reason: "cannot reach origin (fetch failed)" };
 
   const base = await baseBranch(cwd);
   const branch = await out(["branch", "--show-current"], cwd);
   if (!branch)
-    return { reason: `detached HEAD at ${await out(["rev-parse", "--short", "HEAD"], cwd)}` };
+    return {
+      kind: "detached",
+      reason: `detached HEAD at ${await out(["rev-parse", "--short", "HEAD"], cwd)}`,
+    };
 
   const notes = [];
   let handoff;

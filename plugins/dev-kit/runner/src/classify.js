@@ -6,7 +6,6 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 
 const TIERS = {
-  fable: { model: "fable", effort: "high", label: "Fable 5 / high" },
   opus: { model: "opus", effort: "high", label: "Opus 5 / high" },
   sonnet: { model: "sonnet", effort: "medium", label: "Sonnet 5 / medium" },
   haiku: { model: "haiku", effort: "low", label: "Haiku 4.5 / low" },

@@ -2,6 +2,8 @@
 
 Shared Claude Code plugin marketplace for [ToDzz.eu Kanban board](https://todzz.eu) & [SvelteKit / Hasura boilerplate](https://github.com/kasparpalgi/svelte-hasura-boilerplate) projects. Contains the `dev-kit` plugin: `/todo`, `/plan`, `/verify`, and the `research-first` skill.
 
+See also [Kanban runner README](plugins/dev-kit/runner/README.md)
+
 ## Install (once per machine)
 
 ```bash

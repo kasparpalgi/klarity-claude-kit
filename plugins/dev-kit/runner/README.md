@@ -1,4 +1,4 @@
-# kanban-runner
+# Kanban runner
 
 A personal daemon that watches local git clones for new `doc/todo/NNN-*-TODO.md` files
 and runs `/todo NNN` against them via `claude`. No Hasura, no admin secret, no public

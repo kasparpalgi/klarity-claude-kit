@@ -9,6 +9,8 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { classify, explicitTier } from "./classify.js";
+import { herdrUp, runInHerdr } from "./herdr.js";
+import { notify, tail } from "./notify.js";
 import { loadConfig } from "./config.js";
 
 const exec = promisify(execFile);
@@ -16,25 +18,6 @@ const cfg = loadConfig();
 const interactive = process.argv.includes("--interactive");
 const log = (...args) =>
   console.log(new Date().toISOString().slice(11, 19), ...args);
-
-const PUSHBULLET_TOKEN = process.env.PUSHBULLET_ACCESS_TOKEN;
-
-async function notify(title, body) {
-  if (!PUSHBULLET_TOKEN) return;
-  fetch("https://api.pushbullet.com/v2/pushes", {
-    method: "POST",
-    headers: {
-      "Access-Token": PUSHBULLET_TOKEN,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ type: "note", title, body }),
-  }).catch(() => {});
-}
-
-/** Last n lines, capped so a Pushbullet note stays readable. */
-function tail(output, lines = 15) {
-  return output.trimEnd().split("\n").slice(-lines).join("\n").slice(-1500);
-}
 
 /**
  * Keep agent logs out of git so they never dirty the tree — and commit the
@@ -109,6 +92,36 @@ function findPending(repoPath) {
   return null;
 }
 
+/**
+ * Herdr path: a visible pane on the phone, permission prompts answerable there.
+ * Falls back to the original headless child whenever herdr is off or down.
+ */
+async function runTask({ repoName, filename, number, repoPath, model }) {
+  if (cfg.useHerdr && (await herdrUp())) {
+    const r = await runInHerdr({
+      name: `task-${number}`,
+      cwd: repoPath,
+      prompt: `/todo ${number}`,
+      args: cfg.unattended
+        ? [...model, "--dangerously-skip-permissions"]
+        : [...model, "--permission-mode", "acceptEdits"],
+      taskMs: cfg.taskMinutes * 60000,
+      blockedMs: cfg.blockedMinutes * 60000,
+      onBlocked: (pane) =>
+        notify(
+          "Runner ⏸ needs you",
+          `${repoName} ${filename}\n\n${tail(pane)}`,
+        ),
+    });
+    if (r.code) log(`  stuck in herdr${r.err ? `: ${r.err}` : " (blocked)"}`);
+    return r;
+  }
+  if (cfg.useHerdr) log("  herdr down — falling back to headless");
+  const args = ["-p", `/todo ${number}`, ...model];
+  if (!interactive) args.push("--dangerously-skip-permissions");
+  return shell("claude", args, repoPath);
+}
+
 async function runRepo(repoName, repoPath) {
   const { stdout: status } = await git(["status", "--porcelain"], repoPath);
   if (status.trim()) {
@@ -134,16 +147,10 @@ async function runRepo(repoName, repoPath) {
   log(`▶ ${repoName} ${filename} (${tier.label})`);
 
   const { stdout: before } = await git(["rev-parse", "HEAD"], repoPath);
-  const claudeArgs = [
-    "-p",
-    `/todo ${number}`,
-    "--model",
-    tier.model,
-    "--effort",
-    tier.effort,
-  ];
-  if (!interactive) claudeArgs.push("--dangerously-skip-permissions");
-  const { code, output } = await shell("claude", claudeArgs, repoPath);
+  const model = ["--model", tier.model, "--effort", tier.effort];
+  const { code, output } = await runTask(
+    { repoName, filename, number, repoPath, model },
+  );
   const { stdout: after } = await git(["rev-parse", "HEAD"], repoPath);
 
   writeFileSync(logFile, output);
@@ -175,6 +182,7 @@ async function tick() {
 }
 
 if (process.argv.includes("--check")) {
+  log(`herdr: ${cfg.useHerdr ? ((await herdrUp()) ? "up" : "ENABLED BUT DOWN") : "off"}`);
   log("configured repos:");
   for (const [name, repoPath] of Object.entries(cfg.repos)) {
     const pending = findPending(repoPath);

@@ -74,30 +74,42 @@ tail -f ~/Library/Logs/kanban-runner.log
 <string>/Users/YOU/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
 ```
 
-## Visible mode (tmux + herdr)
+## Visible mode (herdr) — recommended
 
-See Claude working in real time. Get a notification (ding!) when Claude needs input.
+Set `"useHerdr": true` and the runner stops spawning `claude` as a bare child of the
+launchd daemon. Instead it opens a herdr tab and starts the agent inside it:
 
-```bash
-# 1. Start in a tmux session
-tmux new-session -d -s runner "node plugins/dev-kit/runner/src/run.js --interactive"
-
-# 2. Watch with herdr for notifications
-herdr watch -s runner
-
-# 3. Attach when you want to see what's happening
-tmux attach -t runner
+```
+tab create --workspace <ws> --cwd <repo> --label task-NNN --no-focus
+agent start task-NNN --kind claude --pane <pane> -- --model … --permission-mode acceptEdits
+agent prompt task-NNN "/todo NNN" --wait
 ```
 
-With `--interactive`:
-- Claude runs WITHOUT `--dangerously-skip-permissions`
-- Claude can ask permission questions → herdr dings you
-- You can see the full streaming output in the tmux pane
-- stdin is inherited so you can type answers if attached
+Because the agent lives in a herdr pane it is inventoried by the herdr server, so it
+shows up in `herdr agent list` and on the phone at `https://herdr.servicehost.io`
+while it works. A bare child process is invisible to both.
 
-Without `--interactive` (default):
-- Claude runs headless, never asks
-- Suitable for launchd / unattended use
+Permissions use `--permission-mode acceptEdits`: file edits — the bulk of a `/todo`
+run — flow without prompting, while Bash and destructive operations still ask. An
+asking agent settles to `blocked`, which sends a Pushbullet **"Runner ⏸ needs you"**
+with the pane text; answer it in the relay PWA and the run continues. Set
+`"unattended": true` to go back to `--dangerously-skip-permissions` for overnight runs
+nobody will be watching.
+
+Safety rails:
+
+- herdr server down or `useHerdr` false → falls back to the headless child, logged as
+  `herdr down — falling back to headless`. It never wedges on herdr's absence.
+- A block nobody answers within `blockedMinutes` closes the tab and leaves the task
+  file as `-TODO`, so the queue advances.
+- Any surviving `task-*` agent is a leak from a crashed run and is reaped at the start
+  of the next one.
+
+### Legacy: tmux + `--interactive`
+
+`--interactive` predates the herdr path: it drops `--dangerously-skip-permissions` and
+inherits stdin, so it only works when you attach a terminal yourself. Prefer
+`useHerdr`.
 
 ## How it works
 
@@ -109,7 +121,8 @@ Each tick (one per `pollSeconds`):
 4. Find the lowest `NNN-*-TODO.md` where no `NNN-*-DONE.md` exists.
 5. Read the `> Run with:` frontmatter line (written by task-014). Classify with a
    cheap Claude call if the line is missing; default to `Sonnet 5 / medium` on failure.
-6. Run `claude -p "/todo NNN" --model … --effort …`.
+6. Run `/todo NNN` — in a herdr tab when `useHerdr` is on, otherwise as
+   `claude -p "/todo NNN" --model … --effort …`.
 7. Save the full session output next to the task file as `NNN-slug.log`, and push the
    last 15 lines to the phone (success and failure alike).
 8. If HEAD advanced (i.e. `/todo` committed), push to `origin main`.
@@ -126,8 +139,12 @@ naturally.
 
 | Key           | Meaning                                                       |
 | ------------- | ------------------------------------------------------------- |
-| `pollSeconds` | how often to pull (default 60)                                |
-| `repos`       | `"owner/repo"` → local clone path; `~/` is expanded at runtime |
+| `pollSeconds`    | how often to pull (default 60)                                 |
+| `repos`          | `"owner/repo"` → local clone path; `~/` is expanded at runtime  |
+| `useHerdr`       | run Claude in a herdr pane, visible on the phone (default false) |
+| `unattended`     | on the herdr path, skip permissions instead of asking (false)   |
+| `taskMinutes`    | cap on one `/todo` run (default 45)                             |
+| `blockedMinutes` | how long to wait for a human to answer a prompt (default 30)    |
 
 ## Model & effort
 
@@ -140,10 +157,12 @@ tier. See `classify.js`.
 | Flag            | Effect                                              |
 | --------------- | --------------------------------------------------- |
 | `--check`       | Print each repo path + any pending task file; run nothing |
-| `--interactive` | Drop `--dangerously-skip-permissions`; inherit stdin |
+| `--check`       | also reports whether the herdr server is up               |
+| `--interactive` | Legacy tmux mode: drop `--dangerously-skip-permissions`; inherit stdin |
 
 ## Notes
 
-- Requires Node ≥ 20 and `claude` on `PATH`. No npm dependencies.
+- Requires Node ≥ 20 and `claude` on `PATH`. No npm dependencies. `useHerdr` also
+  needs `herdr` on `PATH` and `dev.herdr.server` running.
 - A repo whose `CLAUDE.md` forbids committing will complete the task but leave HEAD
   unchanged — the log says so and no push is attempted.

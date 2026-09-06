@@ -1,5 +1,9 @@
 {
 	"pollSeconds": 60,
+	"useHerdr": true,
+	"unattended": false,
+	"taskMinutes": 45,
+	"blockedMinutes": 30,
 	"repos": {
 		"klarity/svelte-hasura-boilerplate": "~/Documents/GitHub/svelte-hasura-boilerplate",
 		"klarity/svelte-todo-kanban": "~/Documents/GitHub/svelte-todo-kanban"

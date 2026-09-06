@@ -19,6 +19,12 @@ export function loadConfig(
     throw new Error('config: "repos" is empty');
   return {
     pollSeconds: file.pollSeconds ?? 60,
+    // Run Claude in a herdr pane so it is visible/answerable from the phone.
+    useHerdr: file.useHerdr ?? false,
+    // No phone watching: skip permissions instead of stalling on a prompt.
+    unattended: file.unattended ?? false,
+    taskMinutes: file.taskMinutes ?? 45,
+    blockedMinutes: file.blockedMinutes ?? 30,
     repos: Object.fromEntries(
       Object.entries(file.repos ?? {}).map(([name, dir]) => [
         name,

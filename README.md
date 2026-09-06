@@ -1,7 +1,6 @@
-# klarity-claude-kit
+# Claude Code Kit
 
-Shared Claude Code plugin marketplace for Klarity projects.
-Contains the `dev-kit` plugin: `/todo`, `/plan`, `/verify`, and the `research-first` skill.
+Shared Claude Code plugin marketplace for [ToDzz.eu Kanban board](https://todzz.eu) & [SvelteKit / Hasura boilerplate](https://github.com/kasparpalgi/svelte-hasura-boilerplate) projects. Contains the `dev-kit` plugin: `/todo`, `/plan`, `/verify`, and the `research-first` skill.
 
 ## Install (once per machine)
 

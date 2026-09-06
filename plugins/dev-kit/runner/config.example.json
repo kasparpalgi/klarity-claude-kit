@@ -7,5 +7,11 @@
 	"repos": {
 		"klarity/svelte-hasura-boilerplate": "~/Documents/GitHub/svelte-hasura-boilerplate",
 		"klarity/svelte-todo-kanban": "~/Documents/GitHub/svelte-todo-kanban"
+	},
+	"endpoint": "https://<your-hasura>/v1/graphql",
+	"adminSecret": "<hasura admin secret \u2014 this file's real twin, config.json, is gitignored>",
+	"lists": {
+		"review": "Review",
+		"backlog": "Backlog"
 	}
 }

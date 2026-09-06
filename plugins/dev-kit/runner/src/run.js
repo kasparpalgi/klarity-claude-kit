@@ -14,6 +14,7 @@ import { notify, tail } from "./notify.js";
 import { loadConfig } from "./config.js";
 import { git, ignoreLogs, dirtyPaths, preflight } from "./repo.js";
 import { listPending, pick, todoDir } from "./queue.js";
+import { closeLoop } from "./kanban.js";
 import * as state from "./state.js";
 
 const cfg = loadConfig();
@@ -150,7 +151,22 @@ async function runRepo(repoName, repoPath) {
   if (after.trim() !== before.trim())
     await shell("git", ["push", "origin", "HEAD"], repoPath);
   log(`✔ ${filename} — committed and pushed`);
-  await notify("Runner ✔", `${repoName} ${filename}\n\n${tail(output)}`);
+
+  // The file side is finished; now say so on the card it came from.
+  const { stdout: addedOut } = await git(
+    ["diff", "--name-only", "--diff-filter=A", `${before.trim()}..${after.trim()}`],
+    repoPath,
+  );
+  const added = addedOut.split("\n").filter(Boolean);
+  const closed = await closeLoop(cfg.kanban, {
+    repoName, repoPath, dir, number, added,
+  }).catch((err) => [`kanban: ${err.message}`]);
+  for (const line of closed) log(`  ${line}`);
+
+  await notify(
+    "Runner ✔",
+    `${repoName} ${filename}\n${closed.join("\n")}\n\n${tail(output)}`,
+  );
   return true;
 }
 

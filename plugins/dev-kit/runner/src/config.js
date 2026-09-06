@@ -25,6 +25,13 @@ export function loadConfig(
     unattended: file.unattended ?? false,
     taskMinutes: file.taskMinutes ?? 45,
     blockedMinutes: file.blockedMinutes ?? 30,
+    // Closing the card is optional: without an endpoint + adminSecret the runner
+    // just does the files, exactly as before.
+    kanban: {
+      endpoint: file.endpoint ?? null,
+      adminSecret: file.adminSecret ?? null,
+      lists: { review: "Review", backlog: "Backlog", ...(file.lists ?? {}) },
+    },
     repos: Object.fromEntries(
       Object.entries(file.repos ?? {}).map(([name, dir]) => [
         name,

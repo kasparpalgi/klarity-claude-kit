@@ -74,3 +74,27 @@ git pull && git add -A && git commit -m "<conventional commit subject>" && git p
 ```
 
 Respect the project `CLAUDE.md`: if it says not to commit, stop after step 6 and report.
+Commit on the repo's base branch unless its `CLAUDE.md` asks for a task branch — the
+runner pushes a task branch and hands it back to a human instead of continuing.
+
+## 8. Self-check before you claim success
+
+Prose in step 6 is not enough — runs have ended with the task file edited, unrenamed and
+uncommitted, which makes the runner pick the same number again forever. Verify all three,
+in the repo you worked in:
+
+```bash
+ls <task-dir>/$ARGUMENTS-*            # exactly one file, ending -DONE.md or -TODO.md
+git status --porcelain                # empty
+git log --oneline -1                  # your commit
+```
+
+- The task file is renamed (`-DONE.md`, or `-TODO.md` only if a human must finish it) and
+  the Results section is in it.
+- `git status --porcelain` is empty. Leftovers in the task folder are the exact failure
+  that wedged the queue; anywhere else they block every later task in that repo.
+- If the project forbids committing, the tree will not be clean — say so explicitly.
+
+If any check fails, **say so loudly in your final message** ("task file NOT renamed",
+"working tree still dirty: …") instead of reporting success. A run that ends dirty is a
+run that did not finish.

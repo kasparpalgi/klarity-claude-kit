@@ -1,44 +1,32 @@
 #!/usr/bin/env node
 /**
- * Local-clone runner: git pull each repo, run /todo on any unfinished task file.
- * No Hasura, no admin secret. The -DONE.md rename is the only state.
+ * Local-clone runner: keep each repo clean and on its base branch, then run
+ * /todo on the lowest unfinished task file. The -DONE.md rename is the state.
+ * Every skip is either self-healed or announced once — it never wedges quietly.
  */
 
-import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { classify, explicitTier } from "./classify.js";
 import { herdrUp, runInHerdr } from "./herdr.js";
 import { notify, tail } from "./notify.js";
 import { loadConfig } from "./config.js";
+import { git, ignoreLogs, dirtyPaths, preflight } from "./repo.js";
+import { listPending, pick, todoDir } from "./queue.js";
+import * as state from "./state.js";
 
-const exec = promisify(execFile);
 const cfg = loadConfig();
 const interactive = process.argv.includes("--interactive");
 const log = (...args) =>
   console.log(new Date().toISOString().slice(11, 19), ...args);
 
-/**
- * Keep agent logs out of git so they never dirty the tree — and commit the
- * rule itself, or the untracked .gitignore would dirty it instead. Once per repo.
- */
-async function ignoreLogs(dir, repoPath) {
-  const file = join(dir, ".gitignore");
-  const cur = existsSync(file) ? readFileSync(file, "utf8") : "";
-  if (cur.includes("*.log")) return;
-  writeFileSync(file, cur + "*.log\n");
-  await git(["add", file], repoPath);
-  await git(["commit", "-m", "chore: ignore runner task logs", file], repoPath);
-}
-
 function shell(cmd, args, cwd) {
   return new Promise((resolve) => {
-    const stdin = interactive ? "inherit" : "ignore";
     const child = spawn(cmd, args, {
       cwd,
       env: process.env,
-      stdio: [stdin, "pipe", "pipe"],
+      stdio: [interactive ? "inherit" : "ignore", "pipe", "pipe"],
     });
     let output = "";
     const collect = (c) => {
@@ -50,46 +38,6 @@ function shell(cmd, args, cwd) {
     child.on("close", (code) => resolve({ code, output }));
     child.on("error", (err) => resolve({ code: 1, output: String(err) }));
   });
-}
-
-async function git(args, cwd) {
-  return exec("git", args, { cwd });
-}
-
-function todoDir(repoPath) {
-  const claude = join(repoPath, ".claude", "todo");
-  try {
-    readdirSync(claude);
-    return claude;
-  } catch {
-    return join(repoPath, "doc", "todo");
-  }
-}
-
-/** Find first TODO file with no matching DONE (same NNN prefix). */
-function findPending(repoPath) {
-  const dir = todoDir(repoPath);
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true }).filter((e) =>
-      e.isFile(),
-    );
-  } catch {
-    return null;
-  }
-  const done = new Set(
-    entries
-      .filter((e) => /-DONE\.md$/i.test(e.name))
-      .map((e) => e.name.slice(0, 3)),
-  );
-  const todo = entries
-    .map((e) => e.name)
-    .filter((n) => /-TODO\.md$/i.test(n))
-    .sort();
-  for (const name of todo) {
-    if (!done.has(name.slice(0, 3))) return { name, number: name.slice(0, 3) };
-  }
-  return null;
 }
 
 /**
@@ -108,10 +56,7 @@ async function runTask({ repoName, filename, number, repoPath, model }) {
       taskMs: cfg.taskMinutes * 60000,
       blockedMs: cfg.blockedMinutes * 60000,
       onBlocked: (pane) =>
-        notify(
-          "Runner ⏸ needs you",
-          `${repoName} ${filename}\n\n${tail(pane)}`,
-        ),
+        notify("Runner ⏸ needs you", `${repoName} ${filename}\n\n${tail(pane)}`),
     });
     if (r.code) log(`  stuck in herdr${r.err ? `: ${r.err}` : " (blocked)"}`);
     return r;
@@ -123,34 +68,46 @@ async function runTask({ repoName, filename, number, repoPath, model }) {
 }
 
 async function runRepo(repoName, repoPath) {
-  const { stdout: status } = await git(["status", "--porcelain"], repoPath);
-  if (status.trim()) {
-    log(`skip ${repoName} — dirty working tree`);
-    return false;
-  }
-
-  const pull = await shell("git", ["pull", "--ff-only"], repoPath);
-  if (pull.code !== 0) {
-    log(`skip ${repoName} — pull failed (diverged?)`);
-    return false;
-  }
-
-  const pending = findPending(repoPath);
-  if (!pending) return false;
-
-  const { name: filename, number } = pending;
   const dir = todoDir(repoPath);
-  await ignoreLogs(dir, repoPath);
-  const logFile = join(dir, filename.replace(/-TODO\.md$/i, "") + ".log");
-  const content = readFileSync(join(dir, filename), "utf8");
+  const { reason, notes = [], handoff } = await preflight(repoPath, dir);
+  if (reason) {
+    log(`skip ${repoName} — ${reason}`);
+    if (state.setBlocked(repoName, reason))
+      await notify("Runner ⛔ blocked", `${repoName}\n\n${reason}`);
+    return false;
+  }
+  for (const n of notes) log(`  ${repoName}: ${n}`);
+  if (state.clearBlocked(repoName))
+    await notify("Runner ▶ unblocked", `${repoName} is running again.`);
+
+  const pending = listPending(repoPath, dir);
+  state.pruneTries(repoName, pending.map((p) => p.number));
+
+  if (handoff) {
+    const task = pending.find((p) => p.number === handoff);
+    if (task && state.tries(repoName, handoff, task.mtime) < 3) {
+      state.addTry(repoName, handoff, task.mtime, 3);
+      await notify(
+        "Runner ↗ task on a branch",
+        `${repoName} ${task.name}\n\n${notes.join("\n")}`,
+      );
+    }
+  }
+
+  const task = await pick(repoName, pending);
+  if (!task) return false;
+  const { name: filename, number, mtime } = task;
+
+  await ignoreLogs(join(repoPath, dir), repoPath);
+  const logFile = join(repoPath, dir, filename.replace(/-TODO\.md$/i, "") + ".log");
+  const content = readFileSync(join(repoPath, dir, filename), "utf8");
   const tier = explicitTier(content) ?? (await classify(content.slice(0, 500)));
-  log(`▶ ${repoName} ${filename} (${tier.label})`);
+  const attempt = state.addTry(repoName, number, mtime);
+  log(`▶ ${repoName} ${filename} (${tier.label}, attempt ${attempt})`);
 
   const { stdout: before } = await git(["rev-parse", "HEAD"], repoPath);
   const model = ["--model", tier.model, "--effort", tier.effort];
-  const { code, output } = await runTask(
-    { repoName, filename, number, repoPath, model },
-  );
+  const { code, output } = await runTask({ repoName, filename, number, repoPath, model });
   const { stdout: after } = await git(["rev-parse", "HEAD"], repoPath);
 
   writeFileSync(logFile, output);
@@ -158,15 +115,12 @@ async function runRepo(repoName, repoPath) {
 
   if (code !== 0) {
     log(`✘ ${filename} exit ${code}`);
-    await notify(
-      "Runner ✘",
-      `${repoName} ${filename} exit ${code}\n\n${tail(output)}`,
-    );
+    await notify("Runner ✘", `${repoName} ${filename} exit ${code}\n\n${tail(output)}`);
     return true;
   }
 
   if (after.trim() !== before.trim()) {
-    await shell("git", ["push", "origin", "main"], repoPath);
+    await shell("git", ["push", "origin", "HEAD"], repoPath);
     log(`✔ ${filename} — committed and pushed`);
   } else {
     log(`✔ ${filename} — done (uncommitted; CLAUDE.md may forbid committing)`);
@@ -181,19 +135,32 @@ async function tick() {
   }
 }
 
-if (process.argv.includes("--check")) {
+/** Read-only: what would the next tick see, and what is holding each repo up? */
+async function check() {
   log(`herdr: ${cfg.useHerdr ? ((await herdrUp()) ? "up" : "ENABLED BUT DOWN") : "off"}`);
-  log("configured repos:");
+  const { blocked } = state.snapshot();
   for (const [name, repoPath] of Object.entries(cfg.repos)) {
-    const pending = findPending(repoPath);
-    log(
-      `  ${name} → ${repoPath}${pending ? `  [pending: ${pending.name}]` : ""}`,
-    );
+    const dir = todoDir(repoPath);
+    const branch = await git(["branch", "--show-current"], repoPath)
+      .then((r) => r.stdout.trim() || "DETACHED", () => "NOT A GIT REPO");
+    log(`${name} → ${repoPath}`);
+    log(`  branch: ${branch}   task dir: ${dir}`);
+    const dirty = await dirtyPaths(repoPath).catch(() => []);
+    if (dirty.length) log(`  dirty: ${dirty.slice(0, 6).join(", ")}`);
+    if (blocked[name]) log(`  ⛔ blocked: ${blocked[name]}`);
+    for (const p of listPending(repoPath, dir)) {
+      const n = state.tries(name, p.number, p.mtime);
+      log(`  pending: ${p.name}${n ? `  [${n} attempt(s)${n >= 2 ? ", skipped" : ""}]` : ""}`);
+    }
   }
+}
+
+if (process.argv.includes("--check")) {
+  await check();
+} else if (process.argv.includes("--once")) {
+  await tick(); // one pass, for tests and manual pokes
 } else {
-  log(
-    `watching ${Object.keys(cfg.repos).length} repo(s) every ${cfg.pollSeconds}s`,
-  );
+  log(`watching ${Object.keys(cfg.repos).length} repo(s) every ${cfg.pollSeconds}s`);
   for (;;) {
     await tick().catch((err) => log("tick failed:", err.message));
     await new Promise((r) => setTimeout(r, cfg.pollSeconds * 1000));

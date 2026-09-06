@@ -95,5 +95,10 @@ export async function preflight(cwd, taskDir) {
   if (!(await ok(["pull", "--ff-only"], cwd)))
     return { reason: `${base} has diverged from origin/${base} (pull --ff-only failed)` };
 
+  // A checkpoint commit left here would diverge the moment origin moves on.
+  const local = await out(["rev-list", "--count", `origin/${base}..HEAD`], cwd);
+  if (local !== "0" && (await ok(["push", "origin", "HEAD"], cwd)))
+    notes.push(`pushed ${local} local commit(s) to ${base}`);
+
   return { notes, handoff };
 }

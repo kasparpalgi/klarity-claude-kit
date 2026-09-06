@@ -21,10 +21,24 @@ haiku - a mechanical edit: rename, copy change, config tweak
 Task:
 `;
 
-/** The card may say it outright: "Run with: Opus 5 / high" or just "opus". */
+const EFFORTS = ["low", "medium", "high"];
+
+/**
+ * The card may say it outright: "Run with: Opus 5 / high", or "Sonnet 4.6 / low".
+ * The family name picks the tier — any version number after it is ignored, since
+ * `--model sonnet` always means the current Sonnet. An explicit effort after the
+ * slash wins over the tier's default; that is the whole point of writing it.
+ */
 export function explicitTier(text) {
-  const named = /run with:\s*(fable|opus|sonnet|haiku)/i.exec(text || "");
-  return named ? TIERS[named[1].toLowerCase()] : null;
+  const named = /run with:\s*(fable|opus|sonnet|haiku)[^\n/]*(?:\/\s*(\w+))?/i.exec(
+    text || "",
+  );
+  if (!named) return null;
+  const tier = TIERS[named[1].toLowerCase()];
+  const effort = named[2]?.toLowerCase();
+  return EFFORTS.includes(effort)
+    ? { ...tier, effort, label: `${tier.label.split(" / ")[0]} / ${effort}` }
+    : tier;
 }
 
 /** Otherwise ask the cheapest model. Falls back to sonnet on any trouble. */

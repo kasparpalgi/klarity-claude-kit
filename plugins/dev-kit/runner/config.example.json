@@ -1,7 +1,7 @@
 {
 	"pollSeconds": 60,
 	"useHerdr": true,
-	"unattended": false,
+	"unattended": true,
 	"taskMinutes": 45,
 	"blockedMinutes": 30,
 	"repos": {

@@ -50,9 +50,22 @@ async function ensureWorkspace(cwd) {
   return r.workspace.workspace_id;
 }
 
-const readPane = (name) =>
-  raw(["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"])
-    .catch((err) => `herdr read failed: ${err.message}`);
+/**
+ * A blocked agent refuses `recent-unwrapped` ("cannot read N lines while it is
+ * blocked") — which is exactly when we most need the pane, to show the phone
+ * what it is asking. Fall back to the visible screen, which always reads.
+ */
+const readPane = async (name) => {
+  let last = "";
+  for (const src of ["recent-unwrapped", "visible"]) {
+    try {
+      return await raw(["agent", "read", name, "--source", src, "--lines", "400"]);
+    } catch (err) {
+      last = err.message;
+    }
+  }
+  return `herdr read failed: ${last}`;
+};
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

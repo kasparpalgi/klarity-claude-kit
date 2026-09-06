@@ -64,6 +64,19 @@ export function addTry(repo, number, mtime, count = 1) {
   return prev + count;
 }
 
+/**
+ * Record the task file as our own run left it. Without this a run that edits
+ * the file (most of them do) moves its mtime and resets its own attempt count
+ * every tick — an infinite loop wearing the counter's clothes.
+ */
+export function seen(repo, number, mtime) {
+  const s = read();
+  const e = s.tries[key(repo, number)];
+  if (!e) return;
+  e.mtime = mtime;
+  write(s);
+}
+
 /** Forget numbers that are no longer pending, so a reused NNN starts fresh. */
 export function pruneTries(repo, pendingNumbers) {
   const s = read();

@@ -6,7 +6,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { classify, explicitTier } from "./classify.js";
 import { herdrUp, runInHerdr } from "./herdr.js";
@@ -112,6 +112,11 @@ async function runRepo(repoName, repoPath) {
 
   writeFileSync(logFile, output);
   log(`  log → ${logFile}`);
+  // The run almost certainly touched the task file; adopt that mtime as ours so
+  // only a *human* edit reads as "try this again".
+  const taskFile = join(repoPath, dir, filename);
+  if (existsSync(taskFile))
+    state.seen(repoName, number, statSync(taskFile).mtimeMs);
 
   if (code !== 0) {
     log(`✘ ${filename} exit ${code}`);
@@ -119,12 +124,26 @@ async function runRepo(repoName, repoPath) {
     return true;
   }
 
-  if (after.trim() !== before.trim()) {
-    await shell("git", ["push", "origin", "HEAD"], repoPath);
-    log(`✔ ${filename} — committed and pushed`);
-  } else {
-    log(`✔ ${filename} — done (uncommitted; CLAUDE.md may forbid committing)`);
+  // Exit 0 only means the agent stopped talking. Completion is the -DONE
+  // rename plus a clean tree — 159 "finished" with neither and was reported ✔.
+  const left = await dirtyPaths(repoPath);
+  const renamed = !listPending(repoPath, dir).some((p) => p.number === number);
+  if (!renamed || left.length) {
+    const why = [
+      renamed ? null : `${filename} was never renamed to -DONE`,
+      left.length ? `uncommitted: ${left.slice(0, 6).join(", ")}` : null,
+    ].filter(Boolean);
+    log(`⚠ ${filename} — ran but did not finish: ${why.join("; ")}`);
+    await notify(
+      "Runner ⚠ did not finish",
+      `${repoName} ${filename}\n\n${why.join("\n")}\n\n${tail(output)}`,
+    );
+    return true;
   }
+
+  if (after.trim() !== before.trim())
+    await shell("git", ["push", "origin", "HEAD"], repoPath);
+  log(`✔ ${filename} — committed and pushed`);
   await notify("Runner ✔", `${repoName} ${filename}\n\n${tail(output)}`);
   return true;
 }

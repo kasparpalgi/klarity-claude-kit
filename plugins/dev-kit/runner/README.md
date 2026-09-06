@@ -86,6 +86,7 @@ self-healed or announced exactly once, on the edge.
 | On a task branch with unpushed commits | Pushes the branch, returns to the base branch, sends **↗ task on a branch**. Nothing is lost and the queue keeps moving; you merge when ready |
 | On a task branch already merged | Silently returns to the base branch |
 | Detached HEAD, unreachable origin, diverged base | Skips with **⛔ blocked** naming which one |
+| A run that ends with the file unrenamed or the tree dirty | **⚠ did not finish**, naming exactly what was left behind. Exit 0 only means the agent stopped talking, so this is checked, never assumed |
 | A task that runs but never renames itself | Two attempts, then **⏭ stuck task** once and that number is skipped so the queue advances. Editing the task file resets the count |
 
 Attempt counts and blocked reasons live in `~/.kanban-runner/state.json` — deliberately
@@ -113,8 +114,12 @@ Permissions use `--permission-mode acceptEdits`: file edits — the bulk of a `/
 run — flow without prompting, while Bash and destructive operations still ask. An
 asking agent settles to `blocked`, which sends a Pushbullet **"Runner ⏸ needs you"**
 with the pane text; answer it in the relay PWA and the run continues. Set
-`"unattended": true` to go back to `--dangerously-skip-permissions` for overnight runs
-nobody will be watching.
+`"unattended": true` to go back to `--dangerously-skip-permissions`.
+
+**This machine runs `"unattended": true`.** `acceptEdits` sounded safer but cost more than
+it saved: the model spends tokens deciding each call, and it still interrupts for things
+that are not interesting — including editing the task file it was told to edit. Blocks are
+still reported to the phone if one happens; there are just far fewer of them.
 
 Safety rails:
 
@@ -179,6 +184,19 @@ Logs are gitignored: the first run in a repo commits `*.log` to the task folder'
 **One task per tick.** The loop returns after the first task it runs, so repos queue
 naturally.
 
+## Where the logs are
+
+| Log | What is in it |
+| --- | ------------- |
+| `~/Library/Logs/kanban-runner.log` | the daemon's own tick log — every skip, run, push and reason. `tail -f` this first |
+| `<repo>/<task dir>/NNN-slug.log` | the full Claude session transcript for that task, written after every run, gitignored |
+| `~/.kanban-runner/state.json` | current blocked reason per repo and attempt count per task |
+| `npm run check` | the same picture as state.json, rendered, plus herdr's status |
+| herdr, at `https://herdr.servicehost.io` | the live pane while a task is running |
+
+The daemon log is stdout/stderr from launchd, so its path is whatever
+`launchd.plist.example` sets — change it there, not in the code.
+
 ## Config
 
 `config.json` is gitignored.
@@ -188,15 +206,42 @@ naturally.
 | `pollSeconds`    | how often to pull (default 60)                                 |
 | `repos`          | `"owner/repo"` → local clone path; `~/` is expanded at runtime  |
 | `useHerdr`       | run Claude in a herdr pane, visible on the phone (default false) |
-| `unattended`     | on the herdr path, skip permissions instead of asking (false)   |
+| `unattended`     | on the herdr path, skip permissions instead of asking (true here) |
 | `taskMinutes`    | cap on one `/todo` run (default 45)                             |
 | `blockedMinutes` | how long to wait for a human to answer a prompt (default 30)    |
 
 ## Model & effort
 
-The task file's first line decides: `> Run with: Fable 5 / high`, `Opus 5 / high`,
-`Sonnet 5 / medium`, or `Haiku 4.5 / low`. Otherwise a haiku classifier call picks the
-tier. See `classify.js`.
+The task file's first line decides:
+
+```
+> Run with: Opus 5 / high
+```
+
+**Family name** — `fable`, `opus`, `sonnet` or `haiku` — is the only part that selects a
+model. A version number after it is ignored on purpose: the runner passes `--model
+sonnet`, which always resolves to the current Sonnet, so `Sonnet 4.6 / low` and
+`Sonnet 5 / low` do the same thing. Writing a version that does not exist silently gets
+you the current one.
+
+**Effort** after the slash — `low`, `medium`, `high` — is passed through as `--effort`.
+Omit it and the tier's default applies.
+
+The four tiers and their defaults are defined in one place, `src/classify.js`:
+
+| Write | Model | Default effort |
+| ----- | ----- | -------------- |
+| `Fable 5 / high`   | `fable`  | high |
+| `Opus 5 / high`    | `opus`   | high |
+| `Sonnet 5 / medium`| `sonnet` | medium |
+| `Haiku 4.5 / low`  | `haiku`  | low |
+
+Edit that table in `classify.js` to add a tier or change a default. With no `Run with:`
+line at all, a cheap haiku call classifies the task and falls back to `Sonnet 5 / medium`.
+
+Task-014 writes the line from the card, so today the model is chosen by typing it as the
+card's first line. A per-card model dropdown on the board would be better — filed as
+task-161 in `svelte-todo-kanban`.
 
 ## CLI flags
 
@@ -217,6 +262,7 @@ silent no-op and nothing else changes.
 | `Runner ⏸ needs you` | the agent is blocked on a prompt — answer it in the relay PWA |
 | `Runner ⛔ blocked` / `Runner ▶ unblocked` | a repo stopped / resumed being processable |
 | `Runner ↗ task on a branch` | work was left on a task branch, pushed, waiting for your merge |
+| `Runner ⚠ did not finish` | the agent stopped without renaming the file or committing |
 | `Runner ⏭ stuck task` | two runs, no `-DONE` rename; the number is skipped |
 
 ## Files

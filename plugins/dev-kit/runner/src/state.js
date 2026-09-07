@@ -12,7 +12,7 @@ const FILE =
   process.env.KANBAN_RUNNER_STATE ??
   join(homedir(), ".kanban-runner", "state.json");
 
-const EMPTY = { blocked: {}, tries: {} };
+const EMPTY = { blocked: {}, tries: {}, cooldownUntil: 0 };
 
 function read() {
   try {
@@ -88,6 +88,22 @@ export function pruneTries(repo, pendingNumbers) {
     changed = true;
   }
   if (changed) write(s);
+}
+
+/**
+ * Set account-wide once the CLI itself says the usage wall was hit at the
+ * cheapest tier — every repo waits it out rather than burning attempts.
+ */
+export function setCooldown(untilMs) {
+  const s = read();
+  s.cooldownUntil = untilMs;
+  write(s);
+}
+
+/** 0 once passed, so callers never need to compare timestamps themselves. */
+export function cooldownUntil() {
+  const until = read().cooldownUntil || 0;
+  return until > Date.now() ? until : 0;
 }
 
 export const snapshot = () => read();

@@ -242,6 +242,19 @@ auto-chosen — it bills usage credits, so it has to be asked for by name.
 Task-014 writes the line from the card's model/effort fields, so the tier is normally
 chosen from the board rather than typed.
 
+### Usage limits
+
+There's no API for the runner to ask "how much session is left" ahead of time — it only
+finds out when the CLI itself says the wall was hit. When a run's output shows that, the
+runner steps the tier down one notch (`src/classify.js`'s `downgrade`: effort first, then
+family) and retries the same task immediately, since a cheaper tier spends the usage
+budget slower. Once it's already at `haiku / low` and still hits the wall, it stops
+retrying and waits: every repo sits idle until the reset time (a fixed 5h for a session
+limit, 7 days for a weekly one — the runner doesn't parse the exact printed time, since
+that comes with a timezone and can't be got wrong by rounding up) recorded in
+`src/state.js`'s `cooldownUntil`. `--check` and the `Runner ⏳ usage limit` notification
+both surface that timestamp.
+
 ## CLI flags
 
 | Flag            | Effect                                              |

@@ -8,7 +8,8 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { classify, explicitTier } from "./classify.js";
+import { classify, downgrade, explicitTier } from "./classify.js";
+import { usageLimitHit } from "./usage.js";
 import { herdrUp, runInHerdr } from "./herdr.js";
 import { notify, tail } from "./notify.js";
 import { loadConfig } from "./config.js";
@@ -57,7 +58,10 @@ async function runTask({ repoName, filename, number, repoPath, model }) {
       taskMs: cfg.taskMinutes * 60000,
       blockedMs: cfg.blockedMinutes * 60000,
       onBlocked: (pane) =>
-        notify("Runner ⏸ needs you", `${repoName} ${filename}\n\n${tail(pane)}`),
+        notify(
+          "Runner ⏸ needs you",
+          `${repoName} ${filename}\n\n${tail(pane)}`,
+        ),
     });
     if (r.code) log(`  stuck in herdr${r.err ? `: ${r.err}` : " (blocked)"}`);
     return r;
@@ -82,7 +86,10 @@ async function runRepo(repoName, repoPath) {
     await notify("Runner ▶ unblocked", `${repoName} is running again.`);
 
   const pending = listPending(repoPath, dir);
-  state.pruneTries(repoName, pending.map((p) => p.number));
+  state.pruneTries(
+    repoName,
+    pending.map((p) => p.number),
+  );
 
   if (handoff) {
     const task = pending.find((p) => p.number === handoff);
@@ -100,15 +107,55 @@ async function runRepo(repoName, repoPath) {
   const { name: filename, number, mtime } = task;
 
   await ignoreLogs(join(repoPath, dir), repoPath);
-  const logFile = join(repoPath, dir, filename.replace(/-TODO\.md$/i, "") + ".log");
+  const logFile = join(
+    repoPath,
+    dir,
+    filename.replace(/-TODO\.md$/i, "") + ".log",
+  );
   const content = readFileSync(join(repoPath, dir, filename), "utf8");
   const tier = explicitTier(content) ?? (await classify(content.slice(0, 500)));
   const attempt = state.addTry(repoName, number, mtime);
   log(`▶ ${repoName} ${filename} (${tier.label}, attempt ${attempt})`);
 
   const { stdout: before } = await git(["rev-parse", "HEAD"], repoPath);
-  const model = ["--model", tier.model, "--effort", tier.effort];
-  const { code, output } = await runTask({ repoName, filename, number, repoPath, model });
+
+  // The CLI only tells us the usage wall was hit after the fact. A cheaper
+  // tier spends the budget slower, so try stepping down before giving up and
+  // waiting for the reset — same task, same tick.
+  let activeTier = tier;
+  let code,
+    output,
+    waitingOnLimit = false;
+  for (;;) {
+    const model = ["--model", activeTier.model, "--effort", activeTier.effort];
+    ({ code, output } = await runTask({
+      repoName,
+      filename,
+      number,
+      repoPath,
+      model,
+    }));
+    const limit = usageLimitHit(output);
+    if (!limit) break;
+    const cheaper = downgrade(activeTier);
+    if (!cheaper) {
+      state.setCooldown(limit.untilMs);
+      const until = new Date(limit.untilMs).toISOString();
+      log(
+        `⏳ ${filename} — usage limit at ${activeTier.label}, waiting until ${until}`,
+      );
+      await notify(
+        "Runner ⏳ usage limit",
+        `${repoName} ${filename}\n\nWaiting until ${until}`,
+      );
+      waitingOnLimit = true;
+      break;
+    }
+    log(
+      `↓ ${filename} — usage limit at ${activeTier.label}, dropping to ${cheaper.label}`,
+    );
+    activeTier = cheaper;
+  }
   const { stdout: after } = await git(["rev-parse", "HEAD"], repoPath);
 
   writeFileSync(logFile, output);
@@ -119,9 +166,14 @@ async function runRepo(repoName, repoPath) {
   if (existsSync(taskFile))
     state.seen(repoName, number, statSync(taskFile).mtimeMs);
 
+  if (waitingOnLimit) return true;
+
   if (code !== 0) {
     log(`✘ ${filename} exit ${code}`);
-    await notify("Runner ✘", `${repoName} ${filename} exit ${code}\n\n${tail(output)}`);
+    await notify(
+      "Runner ✘",
+      `${repoName} ${filename} exit ${code}\n\n${tail(output)}`,
+    );
     return true;
   }
 
@@ -162,12 +214,22 @@ async function runRepo(repoName, repoPath) {
 
   // The file side is finished; now say so on the card it came from.
   const { stdout: addedOut } = await git(
-    ["diff", "--name-only", "--diff-filter=A", `${before.trim()}..${after.trim()}`],
+    [
+      "diff",
+      "--name-only",
+      "--diff-filter=A",
+      `${before.trim()}..${after.trim()}`,
+    ],
     repoPath,
   );
   const added = addedOut.split("\n").filter(Boolean);
   const closed = await closeLoop(cfg.kanban, {
-    repoName, repoPath, dir, number, added, blocked: Boolean(blocked),
+    repoName,
+    repoPath,
+    dir,
+    number,
+    added,
+    blocked: Boolean(blocked),
   }).catch((err) => [`kanban: ${err.message}`]);
   for (const line of closed) log(`  ${line}`);
 
@@ -179,6 +241,11 @@ async function runRepo(repoName, repoPath) {
 }
 
 async function tick() {
+  const cooldown = state.cooldownUntil();
+  if (cooldown) {
+    log(`⏳ waiting out usage limit until ${new Date(cooldown).toISOString()}`);
+    return;
+  }
   for (const [name, repoPath] of Object.entries(cfg.repos)) {
     if (await runRepo(name, repoPath)) return; // one task per tick
   }
@@ -186,12 +253,19 @@ async function tick() {
 
 /** Read-only: what would the next tick see, and what is holding each repo up? */
 async function check() {
-  log(`herdr: ${cfg.useHerdr ? ((await herdrUp()) ? "up" : "ENABLED BUT DOWN") : "off"}`);
+  log(
+    `herdr: ${cfg.useHerdr ? ((await herdrUp()) ? "up" : "ENABLED BUT DOWN") : "off"}`,
+  );
+  const cooldown = state.cooldownUntil();
+  if (cooldown)
+    log(`⏳ usage limit — waiting until ${new Date(cooldown).toISOString()}`);
   const { blocked } = state.snapshot();
   for (const [name, repoPath] of Object.entries(cfg.repos)) {
     const dir = todoDir(repoPath);
-    const branch = await git(["branch", "--show-current"], repoPath)
-      .then((r) => r.stdout.trim() || "DETACHED", () => "NOT A GIT REPO");
+    const branch = await git(["branch", "--show-current"], repoPath).then(
+      (r) => r.stdout.trim() || "DETACHED",
+      () => "NOT A GIT REPO",
+    );
     log(`${name} → ${repoPath}`);
     log(`  branch: ${branch}   task dir: ${dir}`);
     const dirty = await dirtyPaths(repoPath).catch(() => []);
@@ -199,7 +273,9 @@ async function check() {
     if (blocked[name]) log(`  ⛔ blocked: ${blocked[name]}`);
     for (const p of listPending(repoPath, dir)) {
       const n = state.tries(name, p.number, p.mtime);
-      log(`  pending: ${p.name}${n ? `  [${n} attempt(s)${n >= 2 ? ", skipped" : ""}]` : ""}`);
+      log(
+        `  pending: ${p.name}${n ? `  [${n} attempt(s)${n >= 2 ? ", skipped" : ""}]` : ""}`,
+      );
     }
   }
 }
@@ -209,7 +285,9 @@ if (process.argv.includes("--check")) {
 } else if (process.argv.includes("--once")) {
   await tick(); // one pass, for tests and manual pokes
 } else {
-  log(`watching ${Object.keys(cfg.repos).length} repo(s) every ${cfg.pollSeconds}s`);
+  log(
+    `watching ${Object.keys(cfg.repos).length} repo(s) every ${cfg.pollSeconds}s`,
+  );
   for (;;) {
     await tick().catch((err) => log("tick failed:", err.message));
     await new Promise((r) => setTimeout(r, cfg.pollSeconds * 1000));

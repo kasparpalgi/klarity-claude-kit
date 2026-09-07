@@ -27,7 +27,7 @@ Three things have to line up: the **board**, the **repo**, and the **path on thi
    the *agent list* — the column that means "ready for Claude". A card entering that list
    makes the server write `NNN-slug-TODO.md` into the repo and push it.
 
-2. **Clone the repo onto this Mac.** The runner only ever watches local clones:
+2. **Clone the repo to the computer.** Tested only on Mac. That computer must work when you expect the sessions run when moving card to the list that shall run the agent session. The runner only ever watches local clones:
 
    ```bash
    git clone git@github.com:owner/repo.git ~/Documents/GitHub/repo

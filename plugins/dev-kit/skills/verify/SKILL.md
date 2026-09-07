@@ -17,6 +17,14 @@ Run only what the change actually touches. Report real output — never claim gr
 | Anything JS/TS     | `npx fallow audit --base <commit the session started from> --format json` |
 | Formatting         | `npx prettier --write <the files you touched>` — never `.`                |
 
+If `npm run test:e2e` wants to download a browser, the project's `playwright.config.ts` is
+missing `use: { channel: 'chrome' }`. Add it — every repo here drives the Google Chrome
+already installed instead of caching a second copy of it per Playwright version:
+
+```ts
+use: { baseURL: '…', channel: 'chrome' }
+```
+
 `npx fallow audit`: always pass `--base` pinned to the pre-session commit. Without it the
 default base is the merge-base with `origin/main`, so once any of this session's work is
 committed the audit compares your changes against themselves and reports a false `pass`.

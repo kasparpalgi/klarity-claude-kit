@@ -167,7 +167,7 @@ async function runRepo(repoName, repoPath) {
   );
   const added = addedOut.split("\n").filter(Boolean);
   const closed = await closeLoop(cfg.kanban, {
-    repoName, repoPath, dir, number, added,
+    repoName, repoPath, dir, number, added, blocked: Boolean(blocked),
   }).catch((err) => [`kanban: ${err.message}`]);
   for (const line of closed) log(`  ${line}`);
 

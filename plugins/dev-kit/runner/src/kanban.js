@@ -11,6 +11,7 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { reportToIssue } from "./issue.js";
 
 // The exact marker buildTaskFile() writes, anchored to the start of its own line:
 // a follow-up file quotes its parent as "(from Kanban card `…`)" and must not match.
@@ -39,6 +40,56 @@ export function titleOf(text, filename) {
   return m ? m[1].trim() : basename(filename, ".md");
 }
 
+const esc = (s) =>
+  s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+
+/**
+ * The card body is editor HTML; Results are markdown. Enough of a conversion to read
+ * well on the card — headings, bullets, bold, code. Anything richer belongs in the file.
+ */
+export function toHtml(md) {
+  const inline = (s) =>
+    esc(s)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`(.+?)`/g, "<code>$1</code>");
+
+  const out = [];
+  let list = null;
+  let para = null;
+  const flush = () => {
+    if (list) out.push(`<ul>${list.join("")}</ul>`);
+    if (para) out.push(`<p>${para.join("<br>")}</p>`);
+    list = para = null;
+  };
+
+  for (const line of md.trim().split("\n")) {
+    const heading = /^#{1,6}\s+(.*)$/.exec(line);
+    const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (!line.trim()) flush();
+    else if (heading) {
+      flush();
+      out.push(`<h3>${inline(heading[1])}</h3>`);
+    } else if (bullet) {
+      if (para) flush();
+      (list ??= []).push(`<li>${inline(bullet[1])}</li>`);
+    } else {
+      if (list) flush();
+      (para ??= []).push(inline(line));
+    }
+  }
+  flush();
+  return out.join("");
+}
+
+// The card's own report, appended the same way the task file appends `## Results`.
+// A re-run replaces it from this heading on — two runs must not stack two reports.
+const RESULTS_H = "<h3>Results</h3>";
+
+export function withResults(content, results) {
+  const kept = (content ?? "").split(RESULTS_H)[0].replace(/\s+$/, "");
+  return kept + RESULTS_H + toHtml(results.replace(/^##\s+Results\s*/i, ""));
+}
+
 async function gql(kanban, query, variables) {
   const res = await fetch(kanban.endpoint, {
     method: "POST",
@@ -63,9 +114,16 @@ const BOARD = `query B($repo: String!) {
   }
 }`;
 
-const MOVE = `mutation M($id: uuid!, $list: uuid!, $path: String!) {
-  update_todos_by_pk(pk_columns: {id: $id}, _set: {list_id: $list, task_file_path: $path}) { id }
+// The card ends where the task file ends: same list move, same Results appended to the
+// body. `content` is the card's HTML body, not a comment — comments are the running log.
+const MOVE = `mutation M($id: uuid!, $list: uuid!, $path: String!, $content: String!) {
+  update_todos_by_pk(
+    pk_columns: {id: $id}
+    _set: {list_id: $list, task_file_path: $path, content: $content}
+  ) { id }
 }`;
+
+const CARD = `query C($id: uuid!) { todos_by_pk(id: $id) { content } }`;
 
 const SAY = `mutation S($id: uuid!, $user: uuid!, $body: String!) {
   insert_comments(objects: {todo_id: $id, user_id: $user, content: $body}) { affected_rows }
@@ -98,28 +156,40 @@ function doneFile(dir, number) {
  */
 export async function closeLoop(
   kanban,
-  { repoName, repoPath, dir, number, added },
+  { repoName, repoPath, dir, number, added, blocked },
 ) {
-  if (!kanban?.endpoint || !kanban?.adminSecret) return [];
   const full = join(repoPath, dir);
   const done = doneFile(full, number);
   if (!done) return [];
 
   const text = readFileSync(join(full, done), "utf8");
+  const body = resultsOf(text) ?? `Task complete — \`${dir}/${done}\``;
+
+  // The issue is closed straight from here with `gh`, so it does not depend on the
+  // Kanban being configured — nor on the push webhook, which was never registered.
+  const out = await reportToIssue({ repoName, text, body, blocked });
+
+  if (!kanban?.endpoint || !kanban?.adminSecret) return out;
   const id = cardIdOf(text);
-  if (!id) return [`no card id in ${done} — nothing to close`];
+  if (!id) return [...out, `no card id in ${done} — no card to close`];
 
   const { boards } = await gql(kanban, BOARD, { repo: `%${repoName}%` });
   const board = boards?.[0];
-  if (!board) return [`no board connected to ${repoName}`];
+  if (!board) return [...out, `no board connected to ${repoName}`];
   const listId = (name) =>
     board.lists.find((l) => l.name.toLowerCase() === name.toLowerCase())?.id;
 
-  const out = [];
   const review = listId(kanban.lists.review);
   if (review) {
-    await gql(kanban, MOVE, { id, list: review, path: `${dir}/${done}` });
-    const body = resultsOf(text) ?? `Task complete — \`${dir}/${done}\``;
+    // The card body gets the Results the same way the task file did, so the card and
+    // the markdown say the same thing without opening the repo.
+    const { todos_by_pk: card } = await gql(kanban, CARD, { id });
+    await gql(kanban, MOVE, {
+      id,
+      list: review,
+      path: `${dir}/${done}`,
+      content: withResults(card?.content, body),
+    });
     const { comments } = await gql(kanban, SAID, { id, body });
     if (comments.length) out.push(`card → ${kanban.lists.review} (results already posted)`);
     else {

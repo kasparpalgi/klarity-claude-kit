@@ -13,7 +13,7 @@ import { herdrUp, runInHerdr } from "./herdr.js";
 import { notify, tail } from "./notify.js";
 import { loadConfig } from "./config.js";
 import { git, ignoreLogs, dirtyPaths, preflight } from "./repo.js";
-import { listPending, pick, todoDir } from "./queue.js";
+import { blockedFile, listPending, pick, todoDir } from "./queue.js";
 import { closeLoop } from "./kanban.js";
 import * as state from "./state.js";
 
@@ -150,7 +150,15 @@ async function runRepo(repoName, repoPath) {
 
   if (after.trim() !== before.trim())
     await shell("git", ["push", "origin", "HEAD"], repoPath);
-  log(`✔ ${filename} — committed and pushed`);
+
+  // `-BLOCKED.md` is the agent saying "my half is done, the rest needs a person".
+  // It is a finished run, not a failure — it just wants a different headline.
+  const blocked = blockedFile(repoPath, dir, number);
+  log(
+    blocked
+      ? `⇥ ${blocked} — agent done, a human owns the rest`
+      : `✔ ${filename} — committed and pushed`,
+  );
 
   // The file side is finished; now say so on the card it came from.
   const { stdout: addedOut } = await git(
@@ -164,8 +172,8 @@ async function runRepo(repoName, repoPath) {
   for (const line of closed) log(`  ${line}`);
 
   await notify(
-    "Runner ✔",
-    `${repoName} ${filename}\n${closed.join("\n")}\n\n${tail(output)}`,
+    blocked ? "Runner ⇥ over to you" : "Runner ✔",
+    `${repoName} ${blocked ?? filename}\n${closed.join("\n")}\n\n${tail(output)}`,
   );
   return true;
 }

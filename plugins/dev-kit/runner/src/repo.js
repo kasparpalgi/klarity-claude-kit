@@ -95,7 +95,7 @@ export async function preflight(cwd, taskDir) {
     if (!(await ok(["checkout", base], cwd)))
       return { reason: `cannot leave branch ${branch} for ${base}` };
     notes.push(`switched ${branch} → ${base}`);
-    const n = /^(\d{3})-/.exec(branch);
+    const n = /^(\d{3,})-/.exec(branch);
     if (ahead && n) handoff = n[1];
   }
 

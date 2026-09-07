@@ -15,7 +15,7 @@ import { basename, join } from "node:path";
 // The exact marker buildTaskFile() writes, anchored to the start of its own line:
 // a follow-up file quotes its parent as "(from Kanban card `…`)" and must not match.
 const CARD_ID = /^_From Kanban card `([0-9a-f-]{36})`/m;
-const FOLLOW_UP = /^(\d{3})-.*(?<!-TODO)(?<!-DONE)\.md$/i;
+const FOLLOW_UP = /^\d{3,}-.*(?<!-TODO)(?<!-DONE)(?<!-BLOCKED)\.md$/i;
 
 /** The card a task file was written for, or null for a hand-written file. */
 export const cardIdOf = (text) => CARD_ID.exec(text)?.[1] ?? null;
@@ -85,10 +85,10 @@ const EXISTING = `query E($paths: [String!]!) {
   todos(where: {task_file_path: {_in: $paths}}) { task_file_path }
 }`;
 
-/** Newest `NNN-*-DONE.md` for this task number. */
+/** The `NNN-*-DONE.md` — or `-BLOCKED.md` — this task number ended as. */
 function doneFile(dir, number) {
   return readdirSync(dir).find((n) =>
-    new RegExp(`^${number}-.*-DONE\\.md$`, "i").test(n),
+    new RegExp(`^${number}-.*-(DONE|BLOCKED)\\.md$`, "i").test(n),
   );
 }
 

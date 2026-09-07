@@ -12,9 +12,16 @@ original prompt at the top and the outcome at the bottom. Never rewrite the top 
 
 **The rename is the state.** The runner reads the filename, not your reply: a file still
 called `-TODO.md` means "not finished", so it re-runs the task, hits the same ending, and
-parks it as stuck — a dead queue slot. However this run ends — you built it, it turned out
-to be already done, there is nothing to build, or a human has to take over — you finish by
-appending `## Results` and renaming the file (step 6). No exit skips that.
+parks it as stuck — a dead queue slot. There are exactly two endings, and `-TODO.md` is
+neither of them:
+
+- **`-DONE.md`** — the work is finished, or there was nothing to do.
+- **`-BLOCKED.md`** — you did every part you could and a *person* has to do the rest (design
+  an asset, buy an account, make a call only they can make). This is a finished run, not a
+  failure: the runner pushes it and moves the card to Review like any other.
+
+However this run ends, you finish by appending `## Results` and renaming the file (step 6).
+No exit skips that.
 
 ## 1. Load
 
@@ -71,15 +78,16 @@ Append to the task file:
 | You built it                         | `-DONE.md` | what you built                                        |
 | It was already done before you began | `-DONE.md` | "already complete in `<commit>`", and what you checked |
 | Nothing left to build / obsolete     | `-DONE.md` | why there is nothing to do                            |
-| A human must decide or act           | `-TODO.md` | what you did, what is blocked, what you need          |
+| A human must decide or act           | `-BLOCKED.md` | what you did, what is left, and exactly what you need from them |
 
 If context is running low, write a minimal Results section
 (Summary + Files changed) *first* and fill in Verification afterwards — a short Results
 beats none. The runner also saves the full session transcript next to the task file as
 `NNN-slug.log`, but that is a debugging aid, not a substitute for Results.
 
-Then rename the file to describe itself:
-`008-aiWorkflow-DONE.md` (complete) or `008-aiWorkflow-TODO.md` (needs a human).
+Then rename the file to describe itself: `008-aiWorkflow-DONE.md` (complete) or
+`008-aiWorkflow-BLOCKED.md` (your half is done, a human owns the rest). Never leave it
+`-TODO.md` — that is the one name that means "nobody has run this yet".
 
 Bump `package.json` version — PATCH for fixes, MINOR for features.
 
@@ -90,6 +98,11 @@ Only when verification is green:
 ```bash
 git pull && git add -A && git commit -m "<conventional commit subject>" && git push origin main
 ```
+
+The task file's number **is** its GitHub issue number, and the file says so near the top
+(`_GitHub issue #165_`). When it does, end the commit subject with ` (#165)` — GitHub then
+shows the commit on the issue, and closing the issue shows the work:
+`fix(extension): correct icon sizes (#165)`.
 
 Respect the project `CLAUDE.md`: if it says not to commit, stop after step 6 and report.
 Commit on the repo's base branch unless its `CLAUDE.md` asks for a task branch — the
@@ -102,13 +115,13 @@ uncommitted, which makes the runner pick the same number again forever. Verify a
 in the repo you worked in:
 
 ```bash
-ls <task-dir>/$ARGUMENTS-*            # exactly one file, ending -DONE.md or -TODO.md
+ls <task-dir>/$ARGUMENTS-*            # exactly one file, ending -DONE.md or -BLOCKED.md
 git status --porcelain                # empty
 git log --oneline -1                  # your commit
 ```
 
-- The task file is renamed (`-DONE.md`, or `-TODO.md` only if a human must finish it) and
-  the Results section is in it.
+- The task file is renamed — `-DONE.md`, or `-BLOCKED.md` if a human must finish it — and
+  the Results section is in it. A file still called `-TODO.md` is a failed run.
 - `git status --porcelain` is empty. Leftovers in the task folder are the exact failure
   that wedged the queue; anywhere else they block every later task in that repo.
 - If the project forbids committing, the tree will not be clean — say so explicitly.

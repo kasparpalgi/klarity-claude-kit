@@ -57,6 +57,33 @@ matching repo, then reports back on the card. See [`runner/README.md`](runner/RE
 It ships here because it is the same cross-project workflow the skills describe — it is not
 loaded by Claude Code, you start it yourself.
 
+## One Chrome for every repo
+
+There is already only one. Neither Puppeteer nor Playwright downloads a browser into
+`node_modules` — each keeps a single machine-wide cache that every project shares:
+
+| Tool                                     | Cache                            |
+| ---------------------------------------- | -------------------------------- |
+| Puppeteer (chrome-devtools-mcp, Repomix) | `~/.cache/puppeteer`             |
+| Playwright (`npm run test:e2e`)          | `~/Library/Caches/ms-playwright` |
+
+What actually eats the disk is **revisions, not repos**: every tool upgrade pins a new
+browser build and never deletes the one before it, so the cache grows ~400 MB a bump.
+Adding a repo costs nothing; not upgrading for a year costs a gigabyte.
+
+```bash
+bin/prune-browsers.sh          # what would go
+bin/prune-browsers.sh --yes    # keep only the newest revision of each
+```
+
+Cheaper still — don't download at all. Playwright drives the Google Chrome already in
+`/Applications` when the config says so, and then `npx playwright install` is unnecessary:
+
+```ts
+// playwright.config.ts
+use: { channel: 'chrome' }
+```
+
 ## Hooks
 
 `PostToolUse` runs `prettier --write` on each `.svelte/.ts/.js/.css` file Claude writes.

@@ -30,7 +30,9 @@ export function resultsOf(text) {
   const results = /^##\s+Results\b.*$/im.exec(text);
   if (results) return text.slice(results.index).trim();
   const headings = [...text.matchAll(/^##\s+(.+)$/gm)];
-  const after = headings.find((h) => !/^original requirement$/i.test(h[1].trim()));
+  const after = headings.find(
+    (h) => !/^original requirement$/i.test(h[1].trim()),
+  );
   return after && after !== headings[0] ? text.slice(after.index).trim() : null;
 }
 
@@ -38,56 +40,6 @@ export function resultsOf(text) {
 export function titleOf(text, filename) {
   const m = /^#\s+(.+)$/m.exec(text);
   return m ? m[1].trim() : basename(filename, ".md");
-}
-
-const esc = (s) =>
-  s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
-
-/**
- * The card body is editor HTML; Results are markdown. Enough of a conversion to read
- * well on the card — headings, bullets, bold, code. Anything richer belongs in the file.
- */
-export function toHtml(md) {
-  const inline = (s) =>
-    esc(s)
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/`(.+?)`/g, "<code>$1</code>");
-
-  const out = [];
-  let list = null;
-  let para = null;
-  const flush = () => {
-    if (list) out.push(`<ul>${list.join("")}</ul>`);
-    if (para) out.push(`<p>${para.join("<br>")}</p>`);
-    list = para = null;
-  };
-
-  for (const line of md.trim().split("\n")) {
-    const heading = /^#{1,6}\s+(.*)$/.exec(line);
-    const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
-    if (!line.trim()) flush();
-    else if (heading) {
-      flush();
-      out.push(`<h3>${inline(heading[1])}</h3>`);
-    } else if (bullet) {
-      if (para) flush();
-      (list ??= []).push(`<li>${inline(bullet[1])}</li>`);
-    } else {
-      if (list) flush();
-      (para ??= []).push(inline(line));
-    }
-  }
-  flush();
-  return out.join("");
-}
-
-// The card's own report, appended the same way the task file appends `## Results`.
-// A re-run replaces it from this heading on — two runs must not stack two reports.
-const RESULTS_H = "<h3>Results</h3>";
-
-export function withResults(content, results) {
-  const kept = (content ?? "").split(RESULTS_H)[0].replace(/\s+$/, "");
-  return kept + RESULTS_H + toHtml(results.replace(/^##\s+Results\s*/i, ""));
 }
 
 async function gql(kanban, query, variables) {
@@ -114,16 +66,14 @@ const BOARD = `query B($repo: String!) {
   }
 }`;
 
-// The card ends where the task file ends: same list move, same Results appended to the
-// body. `content` is the card's HTML body, not a comment — comments are the running log.
-const MOVE = `mutation M($id: uuid!, $list: uuid!, $path: String!, $content: String!) {
+// The card ends where the task file ends: move it to Review and point it at the -DONE
+// file. The Results go into a comment only — the card body stays the original request.
+const MOVE = `mutation M($id: uuid!, $list: uuid!, $path: String!) {
   update_todos_by_pk(
     pk_columns: {id: $id}
-    _set: {list_id: $list, task_file_path: $path, content: $content}
+    _set: {list_id: $list, task_file_path: $path}
   ) { id }
 }`;
-
-const CARD = `query C($id: uuid!) { todos_by_pk(id: $id) { content } }`;
 
 const SAY = `mutation S($id: uuid!, $user: uuid!, $body: String!) {
   insert_comments(objects: {todo_id: $id, user_id: $user, content: $body}) { affected_rows }
@@ -181,17 +131,12 @@ export async function closeLoop(
 
   const review = listId(kanban.lists.review);
   if (review) {
-    // The card body gets the Results the same way the task file did, so the card and
-    // the markdown say the same thing without opening the repo.
-    const { todos_by_pk: card } = await gql(kanban, CARD, { id });
-    await gql(kanban, MOVE, {
-      id,
-      list: review,
-      path: `${dir}/${done}`,
-      content: withResults(card?.content, body),
-    });
+    // Move the card and point it at the -DONE file; the Results live in the comment
+    // below, not in the card body — the body stays the request the person wrote.
+    await gql(kanban, MOVE, { id, list: review, path: `${dir}/${done}` });
     const { comments } = await gql(kanban, SAID, { id, body });
-    if (comments.length) out.push(`card → ${kanban.lists.review} (results already posted)`);
+    if (comments.length)
+      out.push(`card → ${kanban.lists.review} (results already posted)`);
     else {
       await gql(kanban, SAY, { id, user: board.user_id, body });
       out.push(`card → ${kanban.lists.review}, results posted`);

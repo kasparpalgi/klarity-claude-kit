@@ -31,15 +31,19 @@ export async function herdrUp() {
 }
 
 /**
- * Only one task runs at a time — `tick()` is awaited, launchd keeps one daemon —
- * so any surviving task-* agent is a crash leak. Reaping a *live* pane takes a
- * second runner: don't `--once` by hand while the daemon holds a task.
+ * A finished run now leaves its pane open at the shell prompt so a human can
+ * type a follow-up and close it themselves. So before each run we close any
+ * leftover `task-*` tab from a previous run. Key off the tab *label*, not the
+ * agent list: a finished agent drops out of `agent list`, but its tab lingers —
+ * only `tab list` still sees it. Only one task runs at a time (`tick()` is
+ * awaited, launchd keeps one daemon), so reaping a *live* pane takes a second
+ * runner: don't `--once` by hand while the daemon holds a task.
  */
 async function reap() {
-  const { agents } = await hx(["agent", "list"]);
-  for (const a of agents) {
-    if (a.name?.startsWith("task-"))
-      await hx(["tab", "close", a.tab_id]).catch(() => {});
+  const { tabs } = await hx(["tab", "list"]);
+  for (const t of tabs) {
+    if (t.label?.startsWith("task-"))
+      await hx(["tab", "close", t.tab_id]).catch(() => {});
   }
 }
 
@@ -63,7 +67,15 @@ const readPane = async (name) => {
   let last = "";
   for (const src of ["recent-unwrapped", "visible"]) {
     try {
-      return await raw(["agent", "read", name, "--source", src, "--lines", "400"]);
+      return await raw([
+        "agent",
+        "read",
+        name,
+        "--source",
+        src,
+        "--lines",
+        "400",
+      ]);
     } catch (err) {
       last = err.message;
     }
@@ -81,7 +93,15 @@ const waitFor = (name, until, ms) =>
  * at an empty prompt — so one resend is safe and usually enough.
  */
 async function promptAgent(name, prompt, taskMs) {
-  const args = ["agent", "prompt", name, prompt, "--wait", "--timeout", String(taskMs)];
+  const args = [
+    "agent",
+    "prompt",
+    name,
+    prompt,
+    "--wait",
+    "--timeout",
+    String(taskMs),
+  ];
   try {
     return await hx(args, taskMs + 15000);
   } catch (err) {
@@ -121,8 +141,19 @@ export async function runInHerdr(opts) {
 
   try {
     await hx(
-      ["agent", "start", name, "--kind", "claude", "--pane",
-       t.root_pane.pane_id, "--timeout", "60000", "--", ...args],
+      [
+        "agent",
+        "start",
+        name,
+        "--kind",
+        "claude",
+        "--pane",
+        t.root_pane.pane_id,
+        "--timeout",
+        "60000",
+        "--",
+        ...args,
+      ],
       90000,
     ).catch((err) => {
       // Blocked during startup: the name stays usable, so answer it like any block.
@@ -137,7 +168,8 @@ export async function runInHerdr(opts) {
   } catch (err) {
     // A herdr timeout or CLI error is a stuck run, not a crash: keep the log.
     return { code: 1, output: await readPane(name), err: err.message };
-  } finally {
-    await hx(["tab", "close", t.tab.tab_id]).catch(() => {});
   }
+  // Deliberately no `finally` close: the pane stays open at the shell prompt so
+  // a human can type a follow-up and close it themselves. The next run's reap()
+  // reclaims it; an idle runner leaves it until the human does. (task-008)
 }

@@ -30,11 +30,8 @@ Three things have to line up: the **board**, the **repo**, and the **path on thi
 2. **Clone the repo to the computer.** Tested only on Mac. That computer must work when you expect the sessions run when moving card to the list that shall run the agent session. The runner only ever watches local clones:
 
    ```bash
-   git clone git@github.com:owner/repo.git ~/Documents/GitHub/repo
+   git clone git@github.com:owner/repo.git ~/somewhere/klarity-claude-kit
    ```
-
-   Anywhere works — `~/Documents/GitHub/<repo>` is the convention here. Note the path;
-   step 3 needs it.
 
 3. **Add that path to `config.json`** (in this folder, gitignored). The key is
    `owner/repo` as GitHub spells it, the value is the **absolute path on this Mac** —

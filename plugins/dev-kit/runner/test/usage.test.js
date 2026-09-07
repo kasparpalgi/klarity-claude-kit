@@ -26,3 +26,16 @@ test("a session-limit message gets the 5-hour fallback", () => {
   assert.equal(hit.scope, "session");
   assert.ok(hit.untilMs - Date.now() > 4 * 3600_000);
 });
+
+test("the headless epoch wall message gives the exact reset time", () => {
+  const reset = Math.floor(Date.now() / 1000) + 2 * 3600; // 2h out, in seconds
+  const hit = usageLimitHit(`Claude AI usage limit reached|${reset}`);
+  assert.equal(hit.scope, "session");
+  assert.equal(hit.untilMs, reset * 1000);
+});
+
+test("a bare 'usage limit reached' is caught even without a reset time", () => {
+  const hit = usageLimitHit("Claude AI usage limit reached");
+  assert.equal(hit.scope, "session");
+  assert.ok(hit.untilMs - Date.now() > 4 * 3600_000);
+});

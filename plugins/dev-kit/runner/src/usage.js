@@ -11,11 +11,20 @@ const WEEKLY_DAYS = 7;
 
 const WEEKLY = /hit your weekly limit|weekly limit reached/i;
 const SESSION =
-  /hit your (?:session|5-hour) limit|5-hour limit reached|session limit reached|rate limit hit|limit reached.*resets?/i;
+  /hit your (?:session|5-hour) limit|5-hour limit reached|session limit reached|rate limit hit|usage limit reached|limit reached.*resets?/i;
 const RETRY_HOURS = /please try again in (\d+)\s*hours?/i;
+// Headless `-p` prints exactly this when the wall is hit: the pipe is followed by
+// the reset time as a unix epoch (seconds). This is the only wording that carries
+// the real reset moment, so it wins — no conservative fallback guessing needed.
+const EPOCH = /usage limit reached\s*\|\s*(\d{10,13})/i;
 
 /** `{ untilMs, scope }` when `output` shows a usage limit was hit, else null. */
 export function usageLimitHit(output) {
+  const epoch = EPOCH.exec(output);
+  if (epoch) {
+    const n = Number(epoch[1]);
+    return { untilMs: n < 1e12 ? n * 1000 : n, scope: "session" };
+  }
   const retry = RETRY_HOURS.exec(output);
   if (retry)
     return {

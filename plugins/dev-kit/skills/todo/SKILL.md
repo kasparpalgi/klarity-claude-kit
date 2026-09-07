@@ -33,14 +33,25 @@ Find the file whose name starts with `$ARGUMENTS` in that folder. Read it.
 | The file is…                                        | Do this                                                                                                                                                                                                                 |
 | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A concrete, actionable task                         | Execute it (step 3 onward)                                                                                                                                                                                              |
-| Planning / open questions / bigger than one session | Answer the questions in the file, then split it into new numbered task files in `doc/todo/` (next free numbers). Do a reasonable slice of real work this session. Steps 3–6 apply only to the slice you actually built. |
+| Planning / open questions / bigger than one session | Answer the questions in the file, then split the rest into **follow-up files** (see below). Do a reasonable slice of real work this session. Steps 3–6 apply only to the slice you actually built. |
 | Already done, obsolete, or impossible               | Do **not** just stop and explain. Skip to step 6: a `## Results` section saying what you found — naming the commit that already did it, if there is one — and the rename. |
+
+**Follow-up files go to the Backlog, never straight back into the queue.** A file named
+`NNN-slug-TODO.md` is a live queue slot: the runner runs it on the very next tick. So the
+work *you* build this session is what earns a `-TODO.md`/`-DONE.md` pair — everything you
+split out for *later* is a follow-up, and a follow-up is named `NNN-slug.md` **with no
+suffix at all**. The runner files each suffixless `NNN-slug.md` you add as a card in the
+Kanban **Backlog** column, where a human triages it — it is never auto-run. Naming a
+follow-up `-TODO.md` is the bug that makes the runner chew through a dozen unreviewed tasks
+back-to-back; do not do it. (A human queues a task deliberately with `/plan`, which is why
+`/plan` output *is* a `-TODO.md`.)
 
 Every task file you create starts with a frontmatter line naming the model and effort:
 `> Run with: Opus 5 / high` — hard architecture; `Sonnet 5 / medium` — normal features;
 `Haiku 4.5 / low` — mechanical edits. The version is honoured exactly, so `Sonnet 4.6`
 runs Sonnet 4.6; effort is any of low, medium, high, xhigh, max. Size each file to one
-session.
+session. A follow-up carries the original request but **no `_From Kanban card …_` line** —
+it gets its own fresh Backlog card, so copying the parent's card id would misfile it.
 
 ## 3. Build
 
@@ -52,7 +63,8 @@ session.
 
 Re-read your own diff with a cold eye. You almost certainly over-built something —
 LLMs do it nearly every time. Cut it now. If context is running out, file a follow-up
-task instead of leaving the complexity in.
+task instead of leaving the complexity in — a suffixless `NNN-slug.md` Backlog file (see
+step 2), not a `-TODO.md`, so it waits for a human instead of running itself next tick.
 
 ## 5. Verify
 

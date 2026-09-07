@@ -41,6 +41,10 @@ $ARGUMENTS
 - [ ] browser-tested
 ```
 
-4. If the request is genuinely more than one session, split it across several numbered
-   files instead of one giant one. Each file must be independently runnable via `/todo <n>`.
+4. If the request is genuinely more than one session, split it instead of writing one giant
+   file. Write the **first** slice as `<NNN>-<name>-TODO.md` — that is the one the runner
+   picks up next. Write every **later** slice as `<NNN>-<name>.md` with **no suffix**: the
+   runner files those as Kanban **Backlog** cards for a human to release, so the queue does
+   not run the whole feature back-to-back unreviewed. Each file must still be independently
+   runnable via `/todo <n>` once it reaches the queue.
 5. Report the file path(s) and stop. Do not start building.

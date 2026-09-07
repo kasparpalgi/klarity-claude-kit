@@ -36,6 +36,8 @@ Other projects pick it up on `/plugin` update — no per-repo copies to keep in 
 Move a card to **TODO** → it writes the task file and executes it in the matching repo.
 Start it yourself; it is not loaded by Claude Code.
 
+`tail -f ~/Library/Logs/kanban-runner.log` - see logs and visit http://127.0.0.1:8375 to see Herdr (or TUI `herdr`)
+
 ## Local development
 
 ```bash

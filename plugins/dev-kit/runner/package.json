@@ -1,6 +1,6 @@
 {
   "name": "kanban-runner",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "private": true,
   "description": "Watch the Kanban TODO column and run /todo in the matching repo.",
   "type": "module",

@@ -233,9 +233,11 @@ async function runRepo(repoName, repoPath) {
   }).catch((err) => [`kanban: ${err.message}`]);
   for (const line of closed) log(`  ${line}`);
 
+  // Name the tier that actually ran: the requested one, or a cheaper one the
+  // usage-limit path silently stepped down to — the only place the phone sees it.
   await notify(
     blocked ? "Runner ⇥ over to you" : "Runner ✔",
-    `${repoName} ${blocked ?? filename}\n${closed.join("\n")}\n\n${tail(output)}`,
+    `${repoName} ${blocked ?? filename} · ${activeTier.label}\n${closed.join("\n")}\n\n${tail(output)}`,
   );
   return true;
 }

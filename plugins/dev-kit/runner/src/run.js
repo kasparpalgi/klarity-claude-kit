@@ -13,7 +13,7 @@ import { usageLimitHit } from "./usage.js";
 import { herdrUp, runInHerdr } from "./herdr.js";
 import { notify, tail } from "./notify.js";
 import { loadConfig } from "./config.js";
-import { git, ignoreLogs, dirtyPaths, preflight } from "./repo.js";
+import { git, ignoreLogs, dirtyPaths, parkDirty, preflight } from "./repo.js";
 import { blockedFile, listPending, pick, todoDir } from "./queue.js";
 import { closeLoop } from "./kanban.js";
 import * as state from "./state.js";
@@ -169,10 +169,12 @@ async function runRepo(repoName, repoPath) {
   if (waitingOnLimit) return true;
 
   if (code !== 0) {
-    log(`✘ ${filename} exit ${code}`);
+    // Clear our own leftover dirt so a stuck run can't block the repo forever.
+    const parked = await parkDirty(repoPath, filename);
+    log(`✘ ${filename} exit ${code}${parked ? " — parked leftover work" : ""}`);
     await notify(
       "Runner ✘",
-      `${repoName} ${filename} exit ${code}\n\n${tail(output)}`,
+      `${repoName} ${filename} exit ${code}${parked ? "\n\nUncommitted work parked in a stash — `git stash pop` to recover." : ""}\n\n${tail(output)}`,
     );
     return true;
   }
@@ -183,9 +185,18 @@ async function runRepo(repoName, repoPath) {
   const renamed = !listPending(repoPath, dir).some((p) => p.number === number);
   if (!renamed || left.length) {
     const moved = after.trim() !== before.trim();
+    // A run that finishes with an uncommitted tree used to wedge the whole repo:
+    // preflight blocks on any dirt, so this task — and every card the human moves
+    // to TODO afterward — was skipped forever. Park our own leftover so the tree
+    // goes clean and the queue keeps moving; the work is recoverable from stash.
+    const parked = left.length ? await parkDirty(repoPath, filename) : null;
     const why = [
       renamed ? null : `${filename} was never renamed to -DONE`,
-      left.length ? `uncommitted: ${left.slice(0, 6).join(", ")}` : null,
+      left.length
+        ? parked
+          ? `parked ${left.length} uncommitted path(s) in a stash — \`git stash pop\` to recover`
+          : `uncommitted (could not park): ${left.slice(0, 6).join(", ")}`
+        : null,
       // Clean tree + un-renamed file is almost always "the agent decided it was
       // done and walked past step 6" — the work is there, only the rename is not.
       !renamed && !left.length

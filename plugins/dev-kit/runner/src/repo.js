@@ -11,7 +11,11 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 export const git = (args, cwd) => exec("git", args, { cwd });
 const out = async (args, cwd) => (await git(args, cwd)).stdout.trim();
-const ok = (args, cwd) => git(args, cwd).then(() => true, () => false);
+const ok = (args, cwd) =>
+  git(args, cwd).then(
+    () => true,
+    () => false,
+  );
 
 /** Paths from `git status --porcelain`, rename targets included. */
 export async function dirtyPaths(cwd) {
@@ -21,6 +25,22 @@ export async function dirtyPaths(cwd) {
     .split("\n")
     .filter(Boolean)
     .map((l) => l.slice(3).split(" -> ").pop().replace(/^"|"$/g, ""));
+}
+
+/**
+ * Park a run's own uncommitted output in a stash so it can't wedge the repo.
+ * A run that ends dirty — the agent worked but never committed — otherwise
+ * blocks every later tick at preflight, so no queued task (and no TODO card the
+ * human adds afterward) ever runs again. This is only ever called right after
+ * the runner's own agent run, so the dirt is the runner's, not a human editing
+ * the tree. Stashing clears the tree while keeping the work recoverable with
+ * `git stash pop`. Returns the stash label, or null if nothing was parked.
+ */
+export async function parkDirty(cwd, filename) {
+  const dirty = await dirtyPaths(cwd);
+  if (!dirty.length) return null;
+  const label = `runner: parked ${filename} at ${new Date().toISOString()}`;
+  return (await ok(["stash", "push", "-u", "-m", label], cwd)) ? label : null;
 }
 
 /** origin's default branch; `main` when the remote never told us. */
@@ -67,7 +87,10 @@ export async function preflight(cwd, taskDir) {
       cwd,
     );
   } else if (dirty.length) {
-    return { kind: "dirty", reason: `dirty working tree — ${dirty.slice(0, 6).join(", ")}` };
+    return {
+      kind: "dirty",
+      reason: `dirty working tree — ${dirty.slice(0, 6).join(", ")}`,
+    };
   }
 
   if (!(await ok(["fetch", "origin"], cwd)))
@@ -90,8 +113,13 @@ export async function preflight(cwd, taskDir) {
       ),
     );
     if (ahead && !(await ok(["push", "-u", "origin", "HEAD"], cwd)))
-      return { reason: `on branch ${branch} with ${ahead} unpushed commit(s) that will not push` };
-    if (ahead) notes.push(`pushed ${branch} (${ahead} commit(s)) — merge it into ${base}`);
+      return {
+        reason: `on branch ${branch} with ${ahead} unpushed commit(s) that will not push`,
+      };
+    if (ahead)
+      notes.push(
+        `pushed ${branch} (${ahead} commit(s)) — merge it into ${base}`,
+      );
     if (!(await ok(["checkout", base], cwd)))
       return { reason: `cannot leave branch ${branch} for ${base}` };
     notes.push(`switched ${branch} → ${base}`);
@@ -100,7 +128,9 @@ export async function preflight(cwd, taskDir) {
   }
 
   if (!(await ok(["pull", "--ff-only"], cwd)))
-    return { reason: `${base} has diverged from origin/${base} (pull --ff-only failed)` };
+    return {
+      reason: `${base} has diverged from origin/${base} (pull --ff-only failed)`,
+    };
 
   // A checkpoint commit left here would diverge the moment origin moves on.
   const local = await out(["rev-list", "--count", `origin/${base}..HEAD`], cwd);

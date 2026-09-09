@@ -4,7 +4,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -41,6 +41,35 @@ export async function parkDirty(cwd, filename) {
   if (!dirty.length) return null;
   const label = `runner: parked ${filename} at ${new Date().toISOString()}`;
   return (await ok(["stash", "push", "-u", "-m", label], cwd)) ? label : null;
+}
+
+/**
+ * The agent did the work (or found nothing to do) but walked past the rename —
+ * skill step 6 — so the file is still `-TODO` on a clean tree. Finish the
+ * bookkeeping it skipped: append a short runner note if it wrote no Results,
+ * rename to `-DONE`, and commit. Only ever called on a clean tree, so there is
+ * no half-done work to lose; the queue slot closes instead of re-running the
+ * same already-finished task three times and parking it. Returns the -DONE name.
+ */
+export async function autoFinish(cwd, taskDir, filename, moved) {
+  const done = filename.replace(/-TODO\.md$/i, "-DONE.md");
+  const path = join(cwd, taskDir, filename);
+  const text = readFileSync(path, "utf8");
+  if (!/^##\s+Results\b/im.test(text))
+    writeFileSync(
+      path,
+      text.replace(/\s*$/, "") +
+        "\n\n## Results\n\nThe agent finished the run but never renamed the file, " +
+        "so the runner completed it. The tree was clean" +
+        (moved
+          ? " and the agent's commits are in"
+          : " with nothing left to commit") +
+        " — see the `.log` beside this file for the full session.\n",
+    );
+  renameSync(path, join(cwd, taskDir, done));
+  await git(["add", "-A", "--", taskDir], cwd);
+  await git(["commit", "-m", `docs(todo): finish ${done} (runner)`], cwd);
+  return done;
 }
 
 /** origin's default branch; `main` when the remote never told us. */

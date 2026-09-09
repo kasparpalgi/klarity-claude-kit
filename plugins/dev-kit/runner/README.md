@@ -83,8 +83,9 @@ self-healed or announced exactly once, on the edge.
 | On a task branch with unpushed commits | Pushes the branch, returns to the base branch, sends **↗ task on a branch**. Nothing is lost and the queue keeps moving; you merge when ready |
 | On a task branch already merged | Silently returns to the base branch |
 | Detached HEAD, unreachable origin, diverged base | Skips with **⛔ blocked** naming which one |
-| A run that ends with the file unrenamed or the tree dirty | **⚠ did not finish**, naming exactly what was left behind. Exit 0 only means the agent stopped talking, so this is checked, never assumed |
-| A task that runs but never renames itself | Two attempts, then **⏭ stuck task** once and that number is skipped so the queue advances. Editing the task file resets the count |
+| A run that ends **clean** but never renamed the file | Finishes the bookkeeping the agent skipped — renames to `-DONE`, notes it, commits, pushes, moves the card — and reports **✔**. A clean tree means nothing was left half-done, so this is the common "already complete / nothing to do" ending, not a failure |
+| A run that ends with the tree **dirty** | **⚠ did not finish**: parks the uncommitted work in a stash (recoverable with `git stash pop`) and names what was left. Exit 0 only means the agent stopped talking, so this is checked, never assumed |
+| A task that runs but keeps leaving the tree dirty | Two attempts, then **⏭ stuck task** once and that number is skipped so the queue advances. Editing the task file resets the count |
 
 Attempt counts and blocked reasons live in `~/.kanban-runner/state.json` — deliberately
 outside every repo, so runner bookkeeping can never dirty a working tree. Delete the file
@@ -126,6 +127,24 @@ Safety rails:
   file as `-TODO`, so the queue advances.
 - Any surviving `task-*` agent is a leak from a crashed run and is reaped at the start
   of the next one.
+
+### Follow-up questions after a run
+
+A finished run **leaves its pane open** at the herdr prompt, so you can type follow-up
+questions to the same session from the phone. This is a courtesy, not a gate:
+
+- **The next task starts on its own.** The daemon already recorded the run as finished the
+  moment the agent went idle — it renamed the file, pushed, and moved the card before the
+  pane was ever left open. On the next poll (`pollSeconds`) it picks the next `-TODO.md`
+  and `reap()` closes your left-open `task-*` pane to reclaim it. You do **not** trigger
+  anything; a left-open pane never blocks the queue.
+- **You do not need to `/exit`.** `/exit` only ends Claude inside that one pane — the runner
+  is a separate launchd daemon and does not watch it, so exiting neither starts nor speeds
+  up the next task. Leave the pane or close its tab; either way the next run reaps it.
+- **If a run looks finished in the pane but the card never moved,** the agent walked past
+  step 6 (it said "already complete, nothing to do" and stopped without renaming). The
+  runner now finishes that bookkeeping itself on a clean tree — see the guard table above —
+  so this no longer leaves a dead queue slot to rename by hand.
 
 ## Headless mode (launchd)
 

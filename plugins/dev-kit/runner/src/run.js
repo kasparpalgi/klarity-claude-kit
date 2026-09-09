@@ -13,7 +13,14 @@ import { usageLimitHit } from "./usage.js";
 import { herdrUp, runInHerdr } from "./herdr.js";
 import { notify, tail } from "./notify.js";
 import { loadConfig } from "./config.js";
-import { git, ignoreLogs, dirtyPaths, parkDirty, preflight } from "./repo.js";
+import {
+  git,
+  ignoreLogs,
+  dirtyPaths,
+  parkDirty,
+  preflight,
+  autoFinish,
+} from "./repo.js";
 import { blockedFile, listPending, pick, todoDir } from "./queue.js";
 import { closeLoop } from "./kanban.js";
 import * as state from "./state.js";
@@ -104,7 +111,8 @@ async function runRepo(repoName, repoPath) {
 
   const task = await pick(repoName, pending);
   if (!task) return false;
-  const { name: filename, number, mtime } = task;
+  let { name: filename } = task;
+  const { number, mtime } = task;
 
   await ignoreLogs(join(repoPath, dir), repoPath);
   const logFile = join(
@@ -156,7 +164,7 @@ async function runRepo(repoName, repoPath) {
     );
     activeTier = cheaper;
   }
-  const { stdout: after } = await git(["rev-parse", "HEAD"], repoPath);
+  let { stdout: after } = await git(["rev-parse", "HEAD"], repoPath);
 
   writeFileSync(logFile, output);
   log(`  log → ${logFile}`);
@@ -179,29 +187,21 @@ async function runRepo(repoName, repoPath) {
     return true;
   }
 
-  // Exit 0 only means the agent stopped talking. Completion is the -DONE
-  // rename plus a clean tree — 159 "finished" with neither and was reported ✔.
+  // Exit 0 only means the agent stopped talking. Completion is the -DONE rename
+  // plus a clean tree, and the runner checks both — 159 "finished" with neither.
   const left = await dirtyPaths(repoPath);
   const renamed = !listPending(repoPath, dir).some((p) => p.number === number);
-  if (!renamed || left.length) {
-    const moved = after.trim() !== before.trim();
-    // A run that finishes with an uncommitted tree used to wedge the whole repo:
-    // preflight blocks on any dirt, so this task — and every card the human moves
-    // to TODO afterward — was skipped forever. Park our own leftover so the tree
-    // goes clean and the queue keeps moving; the work is recoverable from stash.
-    const parked = left.length ? await parkDirty(repoPath, filename) : null;
+
+  if (left.length) {
+    // A dirty finish is real work the agent never committed. preflight blocks on
+    // any dirt, so left as-is it wedges this task and every card queued after it.
+    // We cannot guess what belongs in a commit, so park it (recoverable) and warn.
+    const parked = await parkDirty(repoPath, filename);
     const why = [
       renamed ? null : `${filename} was never renamed to -DONE`,
-      left.length
-        ? parked
-          ? `parked ${left.length} uncommitted path(s) in a stash — \`git stash pop\` to recover`
-          : `uncommitted (could not park): ${left.slice(0, 6).join(", ")}`
-        : null,
-      // Clean tree + un-renamed file is almost always "the agent decided it was
-      // done and walked past step 6" — the work is there, only the rename is not.
-      !renamed && !left.length
-        ? `tree is clean${moved ? `, it committed ${after.trim().slice(0, 8)}` : ""} — probably finished, just not renamed; rename it by hand`
-        : null,
+      parked
+        ? `parked ${left.length} uncommitted path(s) in a stash — \`git stash pop\` to recover`
+        : `uncommitted (could not park): ${left.slice(0, 6).join(", ")}`,
     ].filter(Boolean);
     log(`⚠ ${filename} — ran but did not finish: ${why.join("; ")}`);
     await notify(
@@ -209,6 +209,25 @@ async function runRepo(repoName, repoPath) {
       `${repoName} ${filename}\n\n${why.join("\n")}\n\n${tail(output)}`,
     );
     return true;
+  }
+
+  if (!renamed) {
+    // Clean tree, file still -TODO: the agent did the work — or found nothing to
+    // do (already complete / obsolete) — and walked past step 6. The repo is
+    // whole, only the rename is missing, so finish it here instead of parking a
+    // dead slot the human must rename by hand and re-running the same task three
+    // times. This is the common "already complete, nothing to do" end (task-014).
+    const done = await autoFinish(
+      repoPath,
+      dir,
+      filename,
+      after.trim() !== before.trim(),
+    );
+    ({ stdout: after } = await git(["rev-parse", "HEAD"], repoPath));
+    log(
+      `✔ ${filename} — agent skipped the rename; runner finished it as ${done}`,
+    );
+    filename = done;
   }
 
   if (after.trim() !== before.trim())

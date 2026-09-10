@@ -22,7 +22,7 @@ import {
   preflight,
   autoFinish,
 } from "./repo.js";
-import { blockedFile, listPending, pick, todoDir } from "./queue.js";
+import { blockedFile, listPending, pick, stemOf, todoDir } from "./queue.js";
 import { closeLoop } from "./kanban.js";
 import * as state from "./state.js";
 
@@ -217,7 +217,9 @@ async function runRepo(repoName, repoPath) {
     left = await dirtyPaths(repoPath);
   }
 
-  const renamed = !listPending(repoPath, dir).some((p) => p.number === number);
+  // Our file specifically, not "something numbered NNN" — a second task can share
+  // the number, and then a namesake's -TODO would read as "we never renamed ours".
+  const renamed = !listPending(repoPath, dir).some((p) => p.name === filename);
 
   if (left.length) {
     // A dirty finish is real work the agent never committed. preflight blocks on
@@ -262,7 +264,8 @@ async function runRepo(repoName, repoPath) {
 
   // `-BLOCKED.md` is the agent saying "my half is done, the rest needs a person".
   // It is a finished run, not a failure — it just wants a different headline.
-  const blocked = blockedFile(repoPath, dir, number);
+  const stem = stemOf(filename);
+  const blocked = blockedFile(repoPath, dir, stem);
   log(
     blocked
       ? `⇥ ${blocked} — agent done, a human owns the rest`
@@ -284,7 +287,7 @@ async function runRepo(repoName, repoPath) {
     repoName,
     repoPath,
     dir,
-    number,
+    stem,
     added,
     blocked: Boolean(blocked),
   }).catch((err) => [`kanban: ${err.message}`]);

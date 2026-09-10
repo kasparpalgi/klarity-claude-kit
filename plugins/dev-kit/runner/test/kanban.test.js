@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardIdOf, resultsOf, titleOf } from "../src/kanban.js";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { cardIdOf, doneFile, resultsOf, titleOf } from "../src/kanban.js";
 
 const DONE = `> Run with: Opus 5 / high
 
@@ -90,4 +93,13 @@ test("a file with only a requirement has nothing to report", () => {
     resultsOf("# T\n\n## Original Requirement\n\nDo the thing.\n"),
     null,
   );
+});
+
+test("reads the -DONE file of this task, not of a namesake", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kanban-"));
+  for (const n of ["019-errors-DONE.md", "019-task012Fix-BLOCKED.md"])
+    writeFileSync(join(dir, n), "x");
+  assert.equal(doneFile(dir, "019-errors"), "019-errors-DONE.md");
+  assert.equal(doneFile(dir, "019-task012Fix"), "019-task012Fix-BLOCKED.md");
+  assert.equal(doneFile(dir, "019-neverRan"), undefined);
 });

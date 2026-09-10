@@ -184,8 +184,12 @@ Each tick (one per `pollSeconds`), for each configured repo:
    `git pull --ff-only`. Anything unresolvable skips the repo with one notification
    (see *Guards* above).
 2. Find the task folder (`.claude/todo` if it exists, else `doc/todo`).
-3. List every `NNN-*-TODO.md` with no matching `NNN-*-DONE.md`, lowest first, and take
-   the first one that has not already used up its two attempts.
+3. List every `NNN-slug-TODO.md` with no `NNN-slug-DONE.md` (or `-BLOCKED.md`) **of its
+   own stem**, lowest number first, and take the first one that has not already used up
+   its two attempts. Retirement matches the whole `NNN-slug`, never the bare `NNN`:
+   numbers were "next free slot in the folder" before task-014 and are the GitHub issue
+   number after it, so two unrelated tasks can share one, and keying on the number alone
+   made the newer of the pair invisible the moment the server wrote it.
 4. Read the `> Run with:` frontmatter line (written by task-014). Classify with a
    cheap Claude call if the line is missing; default to `Sonnet 5 / medium` on failure.
 5. Run `/todo NNN` — in a herdr tab when `useHerdr` is on, otherwise as
@@ -294,7 +298,7 @@ silent no-op and nothing else changes.
 | `Runner ⛔ blocked` / `Runner ▶ unblocked` | a repo stopped / resumed being processable |
 | `Runner ↗ task on a branch` | work was left on a task branch, pushed, waiting for your merge |
 | `Runner ⚠ did not finish` | the agent stopped without renaming the file or committing |
-| `Runner ⏭ stuck task` | two runs, no `-DONE` rename; the number is skipped |
+| `Runner ⏭ stuck task` | two runs, no `-DONE` rename; the task is skipped |
 
 ## Files
 

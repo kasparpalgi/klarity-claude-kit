@@ -12,6 +12,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { reportToIssue } from "./issue.js";
+import { stemOf } from "./queue.js";
 
 // The exact marker buildTaskFile() writes, anchored to the start of its own line:
 // a follow-up file quotes its parent as "(from Kanban card `…`)" and must not match.
@@ -93,10 +94,11 @@ const EXISTING = `query E($paths: [String!]!) {
   todos(where: {task_file_path: {_in: $paths}}) { task_file_path }
 }`;
 
-/** The `NNN-*-DONE.md` — or `-BLOCKED.md` — this task number ended as. */
-function doneFile(dir, number) {
-  return readdirSync(dir).find((n) =>
-    new RegExp(`^${number}-.*-(DONE|BLOCKED)\\.md$`, "i").test(n),
+/** The `-DONE.md` — or `-BLOCKED.md` — this task ended as. Keyed by stem, because a
+ * bare NNN can belong to two tasks and this file decides which card gets the Results. */
+export function doneFile(dir, stem) {
+  return readdirSync(dir).find(
+    (n) => /-(DONE|BLOCKED)\.md$/i.test(n) && stemOf(n) === stem,
   );
 }
 
@@ -106,10 +108,10 @@ function doneFile(dir, number) {
  */
 export async function closeLoop(
   kanban,
-  { repoName, repoPath, dir, number, added, blocked },
+  { repoName, repoPath, dir, stem, added, blocked },
 ) {
   const full = join(repoPath, dir);
-  const done = doneFile(full, number);
+  const done = doneFile(full, stem);
   if (!done) return [];
 
   const text = readFileSync(join(full, done), "utf8");

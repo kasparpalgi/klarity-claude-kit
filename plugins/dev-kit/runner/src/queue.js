@@ -1,7 +1,12 @@
 /**
  * The task folder is the queue: NNN-*-TODO.md files, minus the ones we gave up on.
- * A number is retired by a `-DONE.md` (finished) or a `-BLOCKED.md` (the agent did its
+ * A task is retired by a `-DONE.md` (finished) or a `-BLOCKED.md` (the agent did its
  * half and a human owns the rest) — either way the runner must not pick it up again.
+ *
+ * Retirement is keyed by the whole stem, not the leading NNN. Numbers used to be
+ * "next free slot in the folder" and are now the GitHub issue number, so two
+ * unrelated tasks can share one: ezysmart-web's finished `019-errors-DONE.md` made
+ * `019-task012Fix-TODO.md` (issue #19) invisible the moment the Kanban wrote it.
  */
 
 import { readdirSync, statSync } from "node:fs";
@@ -22,7 +27,10 @@ export function todoDir(repoPath) {
 /** Leading NNN of a task filename — the GitHub issue number, so not always 3 digits. */
 export const numberOf = (name) => /^(\d+)-/.exec(name)?.[1] ?? null;
 
-/** Every NNN-*-TODO.md with no matching -DONE/-BLOCKED sibling, lowest number first. */
+/** `019-task012Fix` — a task's identity across its -TODO/-DONE/-BLOCKED lives. */
+export const stemOf = (name) => name.replace(/-(TODO|DONE|BLOCKED)\.md$/i, "");
+
+/** Every NNN-*-TODO.md with no -DONE/-BLOCKED sibling of its own, lowest number first. */
 export function listPending(repoPath, dir) {
   let entries;
   try {
@@ -32,10 +40,10 @@ export function listPending(repoPath, dir) {
   }
   const names = entries.filter((e) => e.isFile()).map((e) => e.name);
   const over = new Set(
-    names.filter((n) => /-(DONE|BLOCKED)\.md$/i.test(n)).map(numberOf),
+    names.filter((n) => /-(DONE|BLOCKED)\.md$/i.test(n)).map(stemOf),
   );
   return names
-    .filter((n) => /-TODO\.md$/i.test(n) && numberOf(n) && !over.has(numberOf(n)))
+    .filter((n) => /-TODO\.md$/i.test(n) && numberOf(n) && !over.has(stemOf(n)))
     .sort((a, b) => Number(numberOf(a)) - Number(numberOf(b)))
     .map((name) => ({
       name,
@@ -44,12 +52,12 @@ export function listPending(repoPath, dir) {
     }));
 }
 
-/** The `-BLOCKED.md` this number ended as, if it did — the agent's half is finished. */
-export function blockedFile(repoPath, dir, number) {
+/** The `-BLOCKED.md` this stem ended as, if it did — the agent's half is finished. */
+export function blockedFile(repoPath, dir, stem) {
   try {
     return (
       readdirSync(join(repoPath, dir)).find(
-        (n) => numberOf(n) === number && /-BLOCKED\.md$/i.test(n),
+        (n) => /-BLOCKED\.md$/i.test(n) && stemOf(n) === stem,
       ) ?? null
     );
   } catch {

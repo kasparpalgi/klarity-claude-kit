@@ -81,7 +81,17 @@ async function runTask({ repoName, filename, number, repoPath, model }) {
 
 async function runRepo(repoName, repoPath) {
   const dir = todoDir(repoPath);
-  const { reason, kind, notes = [], handoff } = await preflight(repoPath, dir);
+  const {
+    reason,
+    kind,
+    settling,
+    notes = [],
+    handoff,
+  } = await preflight(repoPath, dir, cfg.checkpointQuietSeconds);
+  if (settling) {
+    log(`skip ${repoName} — task files still settling`);
+    return false;
+  }
   if (reason) {
     log(`skip ${repoName} — ${reason}`);
     if (state.setBlocked(repoName, kind ?? reason))

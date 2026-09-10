@@ -19,6 +19,7 @@ export function loadConfig(
     throw new Error('config: "repos" is empty');
   return {
     pollSeconds: file.pollSeconds ?? 60,
+    checkpointQuietSeconds: file.checkpointQuietSeconds ?? 60,
     // Run Claude in a herdr pane so it is visible/answerable from the phone.
     useHerdr: file.useHerdr ?? false,
     // No phone watching: skip permissions instead of stalling on a prompt.

@@ -1,5 +1,6 @@
 {
 	"pollSeconds": 60,
+	"checkpointQuietSeconds": 60,
 	"useHerdr": true,
 	"unattended": true,
 	"taskMinutes": 45,

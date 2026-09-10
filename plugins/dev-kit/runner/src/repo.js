@@ -4,7 +4,13 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -99,17 +105,30 @@ export async function ignoreLogs(dir, cwd) {
 }
 
 /**
- * Returns `{ reason, kind }` when the repo must be skipped, otherwise `{ notes,
- * handoff }`. `handoff` names a task number whose work was left on a branch:
- * it has been pushed, so the runner must not run that number again.
+ * Returns `{ reason, kind }` when the repo must be skipped, `{ settling: true }`
+ * when task files are still being actively edited (quiet period not met), or
+ * `{ notes, handoff }` on success. `handoff` names a task number whose work was
+ * left on a branch: it has been pushed, so the runner must not run that number again.
  *
  * `kind` is the *stable* half of the reason. A dirty tree grows a file at a time
  * while someone works in it, and dedup on the full message meant one push per new
  * file — a flood for what is one unchanged condition.
  */
-export async function preflight(cwd, taskDir) {
+export async function preflight(cwd, taskDir, quietSeconds = 0) {
   const dirty = await dirtyPaths(cwd);
   if (dirty.length && dirty.every((p) => p.startsWith(taskDir + "/"))) {
+    if (quietSeconds > 0) {
+      const quietMs = quietSeconds * 1000;
+      const now = Date.now();
+      const settled = dirty.every((p) => {
+        try {
+          return now - statSync(join(cwd, p)).mtimeMs >= quietMs;
+        } catch {
+          return true;
+        }
+      });
+      if (!settled) return { settling: true };
+    }
     await git(["add", "-A", "--", taskDir], cwd);
     await git(
       ["commit", "-m", "chore(todo): checkpoint uncommitted agent output"],

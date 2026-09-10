@@ -12,7 +12,7 @@ const FILE =
   process.env.KANBAN_RUNNER_STATE ??
   join(homedir(), ".kanban-runner", "state.json");
 
-const EMPTY = { blocked: {}, tries: {}, cooldownUntil: 0 };
+const EMPTY = { blocked: {}, tries: {}, cooldownUntil: 0, lastRepo: null };
 
 function read() {
   try {
@@ -45,21 +45,21 @@ export function clearBlocked(repo) {
   return true;
 }
 
-const key = (repo, number) => `${repo}#${number}`;
+const key = (repo, stem) => `${repo}#${stem}`;
 
 /**
  * Attempts are keyed by the task file's mtime: editing the file is the human
  * saying "try again", and resets the count without any extra command.
  */
-export function tries(repo, number, mtime) {
-  const e = read().tries[key(repo, number)];
+export function tries(repo, stem, mtime) {
+  const e = read().tries[key(repo, stem)];
   return e && e.mtime === mtime ? e.count : 0;
 }
 
-export function addTry(repo, number, mtime, count = 1) {
+export function addTry(repo, stem, mtime, count = 1) {
   const s = read();
-  const prev = tries(repo, number, mtime);
-  s.tries[key(repo, number)] = { count: prev + count, mtime };
+  const prev = tries(repo, stem, mtime);
+  s.tries[key(repo, stem)] = { count: prev + count, mtime };
   write(s);
   return prev + count;
 }
@@ -69,25 +69,36 @@ export function addTry(repo, number, mtime, count = 1) {
  * the file (most of them do) moves its mtime and resets its own attempt count
  * every tick — an infinite loop wearing the counter's clothes.
  */
-export function seen(repo, number, mtime) {
+export function seen(repo, stem, mtime) {
   const s = read();
-  const e = s.tries[key(repo, number)];
+  const e = s.tries[key(repo, stem)];
   if (!e) return;
   e.mtime = mtime;
   write(s);
 }
 
-/** Forget numbers that are no longer pending, so a reused NNN starts fresh. */
-export function pruneTries(repo, pendingNumbers) {
+/** Forget stems that are no longer pending, so a reused NNN starts fresh. */
+export function pruneTries(repo, pendingStems) {
   const s = read();
   let changed = false;
   for (const k of Object.keys(s.tries)) {
     if (!k.startsWith(`${repo}#`)) continue;
-    if (pendingNumbers.includes(k.slice(repo.length + 1))) continue;
+    if (pendingStems.includes(k.slice(repo.length + 1))) continue;
     delete s.tries[k];
     changed = true;
   }
   if (changed) write(s);
+}
+
+/** Store which repo ran last so the next tick can start after it (round-robin). */
+export function setLastRepo(repo) {
+  const s = read();
+  s.lastRepo = repo;
+  write(s);
+}
+
+export function getLastRepo() {
+  return read().lastRepo ?? null;
 }
 
 /**

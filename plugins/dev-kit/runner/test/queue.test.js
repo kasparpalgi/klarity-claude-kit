@@ -47,6 +47,13 @@ test("names the -BLOCKED file a task ended as, not a namesake's", () => {
   assert.equal(blockedFile(path, ".", "166-c"), null);
 });
 
+test("listPending includes stem for each task", () => {
+  const path = repo(["019-task012Fix-TODO.md", "020-runnerFairness-TODO.md"]);
+  const pending = listPending(path, ".");
+  assert.equal(pending[0].stem, "019-task012Fix");
+  assert.equal(pending[1].stem, "020-runnerFairness");
+});
+
 test("a finished task does not retire a different task sharing its number", () => {
   // ezysmart-web: 019-errors was finished under the old "next free NNN" scheme;
   // the Kanban then wrote 019-task012Fix for GitHub issue #19. Retiring by number

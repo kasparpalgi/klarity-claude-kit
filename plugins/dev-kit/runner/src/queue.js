@@ -48,6 +48,7 @@ export function listPending(repoPath, dir) {
     .map((name) => ({
       name,
       number: numberOf(name),
+      stem: stemOf(name),
       mtime: statSync(join(repoPath, dir, name)).mtimeMs,
     }));
 }
@@ -68,10 +69,10 @@ export function blockedFile(repoPath, dir, stem) {
 /** Two attempts on the same unchanged file is enough: announce once, move on. */
 export async function pick(repoName, pending) {
   for (const task of pending) {
-    const n = state.tries(repoName, task.number, task.mtime);
+    const n = state.tries(repoName, task.stem, task.mtime);
     if (n < 2) return task;
     if (n > 2) continue; // already announced, or handed off to a branch
-    state.addTry(repoName, task.number, task.mtime);
+    state.addTry(repoName, task.stem, task.mtime);
     await notify(
       "Runner ⏭ stuck task",
       `${repoName} ${task.name}\n\nRan twice without renaming to -DONE (or -BLOCKED, if a human has to finish it). Skipped so the queue advances — edit the file to retry.`,

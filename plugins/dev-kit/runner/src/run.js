@@ -106,13 +106,13 @@ async function runRepo(repoName, repoPath) {
   const pending = listPending(repoPath, dir);
   state.pruneTries(
     repoName,
-    pending.map((p) => p.number),
+    pending.map((p) => p.stem),
   );
 
   if (handoff) {
     const task = pending.find((p) => p.number === handoff);
-    if (task && state.tries(repoName, handoff, task.mtime) < 3) {
-      state.addTry(repoName, handoff, task.mtime, 3);
+    if (task && state.tries(repoName, task.stem, task.mtime) < 3) {
+      state.addTry(repoName, task.stem, task.mtime, 3);
       await notify(
         "Runner ↗ task on a branch",
         `${repoName} ${task.name}\n\n${notes.join("\n")}`,
@@ -123,7 +123,7 @@ async function runRepo(repoName, repoPath) {
   const task = await pick(repoName, pending);
   if (!task) return false;
   let { name: filename } = task;
-  const { number, mtime } = task;
+  const { stem: taskStem, number, mtime } = task;
 
   await ignoreLogs(join(repoPath, dir), repoPath);
   const logFile = join(
@@ -133,7 +133,7 @@ async function runRepo(repoName, repoPath) {
   );
   const content = readFileSync(join(repoPath, dir, filename), "utf8");
   const tier = explicitTier(content) ?? (await classify(content.slice(0, 500)));
-  const attempt = state.addTry(repoName, number, mtime);
+  const attempt = state.addTry(repoName, taskStem, mtime);
   log(`▶ ${repoName} ${filename} (${tier.label}, attempt ${attempt})`);
 
   const { stdout: before } = await git(["rev-parse", "HEAD"], repoPath);
@@ -183,7 +183,7 @@ async function runRepo(repoName, repoPath) {
   // only a *human* edit reads as "try this again".
   const taskFile = join(repoPath, dir, filename);
   if (existsSync(taskFile))
-    state.seen(repoName, number, statSync(taskFile).mtimeMs);
+    state.seen(repoName, taskStem, statSync(taskFile).mtimeMs);
 
   if (waitingOnLimit) return true;
 
@@ -308,8 +308,16 @@ async function tick() {
     log(`⏳ waiting out usage limit until ${new Date(cooldown).toISOString()}`);
     return;
   }
-  for (const [name, repoPath] of Object.entries(cfg.repos)) {
-    if (await runRepo(name, repoPath)) return; // one task per tick
+  const entries = Object.entries(cfg.repos);
+  const last = state.getLastRepo();
+  const lastIdx = last ? entries.findIndex(([n]) => n === last) : -1;
+  const start = (lastIdx + 1) % entries.length;
+  for (let i = 0; i < entries.length; i++) {
+    const [name, repoPath] = entries[(start + i) % entries.length];
+    if (await runRepo(name, repoPath)) {
+      state.setLastRepo(name);
+      return;
+    }
   }
 }
 
@@ -334,7 +342,7 @@ async function check() {
     if (dirty.length) log(`  dirty: ${dirty.slice(0, 6).join(", ")}`);
     if (blocked[name]) log(`  ⛔ blocked: ${blocked[name]}`);
     for (const p of listPending(repoPath, dir)) {
-      const n = state.tries(name, p.number, p.mtime);
+      const n = state.tries(name, p.stem, p.mtime);
       log(
         `  pending: ${p.name}${n ? `  [${n} attempt(s)${n >= 2 ? ", skipped" : ""}]` : ""}`,
       );

@@ -50,6 +50,17 @@ export async function parkDirty(cwd, filename) {
 }
 
 /**
+ * Commit whatever is dirty inside the task folder. Task files are the runner's
+ * own bookkeeping — a checkpoint, a rename, an appended Results block — so there
+ * is never anything to weigh up: they belong in a commit. Returns true when
+ * something was committed.
+ */
+export async function commitTaskDir(cwd, taskDir, message) {
+  await git(["add", "-A", "--", taskDir], cwd);
+  return ok(["commit", "-m", message], cwd);
+}
+
+/**
  * The agent did the work (or found nothing to do) but walked past the rename —
  * skill step 6 — so the file is still `-TODO` on a clean tree. Finish the
  * bookkeeping it skipped: append a short runner note if it wrote no Results,
@@ -129,10 +140,10 @@ export async function preflight(cwd, taskDir, quietSeconds = 0) {
       });
       if (!settled) return { settling: true };
     }
-    await git(["add", "-A", "--", taskDir], cwd);
-    await git(
-      ["commit", "-m", "chore(todo): checkpoint uncommitted agent output"],
+    await commitTaskDir(
       cwd,
+      taskDir,
+      "chore(todo): checkpoint uncommitted agent output",
     );
   } else if (dirty.length) {
     return {
@@ -175,10 +186,21 @@ export async function preflight(cwd, taskDir, quietSeconds = 0) {
     if (ahead && n) handoff = n[1];
   }
 
-  if (!(await ok(["pull", "--ff-only"], cwd)))
-    return {
-      reason: `${base} has diverged from origin/${base} (pull --ff-only failed)`,
-    };
+  if (!(await ok(["pull", "--ff-only"], cwd))) {
+    // Divergence here is routine, not a crisis: the runner's own checkpoint and
+    // finish commits sit unpushed while the Kanban writes task files straight to
+    // origin, so both sides move and --ff-only dies. Everything local is unpushed
+    // and the tree is clean by now, so replaying it on origin is exactly the
+    // `pull` the human was doing by hand — 2616 skips in one log without it.
+    if (!(await ok(["pull", "--rebase"], cwd))) {
+      await ok(["rebase", "--abort"], cwd);
+      return {
+        kind: "diverged",
+        reason: `${base} has diverged from origin/${base} and will not rebase cleanly`,
+      };
+    }
+    notes.push(`rebased ${base} onto origin/${base}`);
+  }
 
   // A checkpoint commit left here would diverge the moment origin moves on.
   const local = await out(["rev-list", "--count", `origin/${base}..HEAD`], cwd);

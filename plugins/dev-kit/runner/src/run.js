@@ -16,6 +16,7 @@ import { loadConfig } from "./config.js";
 import {
   git,
   ignoreLogs,
+  commitTaskDir,
   dirtyPaths,
   parkDirty,
   preflight,
@@ -199,7 +200,23 @@ async function runRepo(repoName, repoPath) {
 
   // Exit 0 only means the agent stopped talking. Completion is the -DONE rename
   // plus a clean tree, and the runner checks both — 159 "finished" with neither.
-  const left = await dirtyPaths(repoPath);
+  let left = await dirtyPaths(repoPath);
+
+  // Dirt confined to the task folder is the run's own bookkeeping, not work the
+  // agent abandoned — most often the deleted `-TODO` half of a rename whose
+  // `-DONE` side it committed alone (task-013). preflight commits exactly this on
+  // the next tick, so parking it here only stranded the card: the early return
+  // below skipped the rename check, the push, the issue and closeLoop entirely.
+  if (left.length && left.every((p) => p.startsWith(dir + "/"))) {
+    await commitTaskDir(
+      repoPath,
+      dir,
+      `docs(todo): finish ${filename} bookkeeping (runner)`,
+    );
+    ({ stdout: after } = await git(["rev-parse", "HEAD"], repoPath));
+    left = await dirtyPaths(repoPath);
+  }
+
   const renamed = !listPending(repoPath, dir).some((p) => p.number === number);
 
   if (left.length) {

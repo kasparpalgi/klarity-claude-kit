@@ -6,11 +6,18 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { autoFinish, dirtyPaths, parkDirty } from "../src/repo.js";
+import {
+  autoFinish,
+  commitTaskDir,
+  dirtyPaths,
+  parkDirty,
+  preflight,
+} from "../src/repo.js";
 
 /** A throwaway git repo with one committed file, so later edits read as dirty. */
 function repo() {
@@ -81,4 +88,67 @@ test("autoFinish keeps the agent's own Results instead of appending its own", as
   const text = readFileSync(join(path, "doc/todo/172-x-DONE.md"), "utf8");
   assert.match(text, /Agent wrote this\./);
   assert.equal(text.match(/## Results/g).length, 1); // not doubled
+});
+
+test("commitTaskDir commits the deleted -TODO half of a half-committed rename", async () => {
+  const { path, git } = repoWithTask("013-x-TODO.md", "# X\n");
+  writeFileSync(join(path, "doc/todo/013-x-DONE.md"), "# X\n\n## Results\n\nDone.\n");
+  git("add", "doc/todo/013-x-DONE.md"); // the agent committed only the -DONE side
+  git("commit", "-qm", "feat: x");
+  git("rm", "-q", "--cached", "doc/todo/013-x-TODO.md");
+  unlinkSync(join(path, "doc/todo/013-x-TODO.md"));
+  assert.deepEqual(await dirtyPaths(path), ["doc/todo/013-x-TODO.md"]);
+
+  assert.equal(await commitTaskDir(path, "doc/todo", "docs(todo): finish"), true);
+  assert.deepEqual(await dirtyPaths(path), []); // closeLoop can now run
+});
+
+/** A repo cloned from a bare origin, plus a second clone to move origin behind our back. */
+function cloned() {
+  const origin = mkdtempSync(join(tmpdir(), "origin-"));
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main", origin]);
+  const { path } = repo(); // starts on whatever the local default branch is
+  const git = (...a) => execFileSync("git", a, { cwd: path });
+  git("branch", "-M", "main");
+  git("remote", "add", "origin", origin);
+  git("push", "-q", "-u", "origin", "main");
+
+  const other = mkdtempSync(join(tmpdir(), "other-"));
+  execFileSync("git", ["clone", "-q", origin, other]);
+  const them = (...a) => execFileSync("git", a, { cwd: other });
+  them("config", "user.email", "t@t.t");
+  them("config", "user.name", "t");
+  return { path, git, other, them };
+}
+
+test("preflight rebases past a divergence instead of wedging the repo", async () => {
+  const { path, git, other, them } = cloned();
+  writeFileSync(join(other, "theirs.txt"), "kanban\n"); // origin moves on
+  them("add", "-A");
+  them("commit", "-qm", "docs(todo): from Kanban");
+  them("push", "-q");
+  writeFileSync(join(path, "mine.txt"), "runner\n"); // and so do we
+  git("add", "-A");
+  git("commit", "-qm", "chore(todo): checkpoint");
+
+  const { reason, notes } = await preflight(path, "doc/todo");
+  assert.equal(reason, undefined);
+  assert.ok(notes.some((n) => /rebased main onto origin\/main/.test(n)));
+  assert.ok(notes.some((n) => /pushed 1 local commit/.test(n)));
+  them("pull", "-q");
+  assert.ok(existsSync(join(other, "mine.txt"))); // our commit reached origin
+});
+
+test("preflight still reports a divergence it cannot rebase, leaving a clean tree", async () => {
+  const { path, git, other, them } = cloned();
+  writeFileSync(join(other, "a.txt"), "theirs\n");
+  them("commit", "-qam", "theirs");
+  them("push", "-q");
+  writeFileSync(join(path, "a.txt"), "mine\n"); // same file, same line
+  git("commit", "-qam", "mine");
+
+  const { kind, reason } = await preflight(path, "doc/todo");
+  assert.equal(kind, "diverged");
+  assert.match(reason, /will not rebase cleanly/);
+  assert.deepEqual(await dirtyPaths(path), []); // the rebase was aborted
 });

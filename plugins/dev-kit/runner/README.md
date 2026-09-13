@@ -272,11 +272,15 @@ finds out when the CLI itself says the wall was hit. When a run's output shows t
 runner steps the tier down one notch (`src/classify.js`'s `downgrade`: effort first, then
 family) and retries the same task immediately, since a cheaper tier spends the usage
 budget slower. Once it's already at `haiku / low` and still hits the wall, it stops
-retrying and waits: every repo sits idle until the reset time (a fixed 5h for a session
-limit, 7 days for a weekly one — the runner doesn't parse the exact printed time, since
-that comes with a timezone and can't be got wrong by rounding up) recorded in
-`src/state.js`'s `cooldownUntil`. `--check` and the `Runner ⏳ usage limit` notification
-both surface that timestamp.
+retrying and waits: every repo sits idle until the reset time recorded in
+`src/state.js`'s `cooldownUntil`. That moment comes from the CLI's own message — the
+headless `| <epoch>`, or the human `resets 5:40pm (Europe/Tallinn)` wording an
+interactive/herdr-pane run prints (`src/usage.js` turns the clock time + IANA zone into
+the exact instant). Only a limit message with no time at all falls back to a fixed wait
+(5h session, 7 days weekly). Because the wall is the account's state and not the task's
+fault, the attempt it consumed is given back, so a run that started with almost no budget
+left doesn't count toward the 3-strikes skip. `--check` and the `Runner ⏳ usage limit`
+notification both surface that timestamp, in local time.
 
 ## CLI flags
 

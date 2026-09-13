@@ -28,8 +28,16 @@ import * as state from "./state.js";
 
 const cfg = loadConfig();
 const interactive = process.argv.includes("--interactive");
-const log = (...args) =>
-  console.log(new Date().toISOString().slice(11, 19), ...args);
+// Local wall-clock, not UTC: the human reading the log is in the machine's own
+// timezone, and a UTC prefix here reads as "off by my offset" (task-018).
+const clock = (ms = Date.now()) =>
+  new Date(ms).toLocaleTimeString("en-GB", { hour12: false });
+const stamp = (ms) =>
+  new Date(ms).toLocaleString("en-GB", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+const log = (...args) => console.log(clock(), ...args);
 
 function shell(cmd, args, cwd) {
   return new Promise((resolve) => {
@@ -159,7 +167,11 @@ async function runRepo(repoName, repoPath) {
     const cheaper = downgrade(activeTier);
     if (!cheaper) {
       state.setCooldown(limit.untilMs);
-      const until = new Date(limit.untilMs).toISOString();
+      // Hitting the usage wall is the account's state, not this task's fault —
+      // give back the attempt we took at line ~139 so a run that started with
+      // ~no budget left (task-018) doesn't count toward the 3-strikes skip.
+      state.addTry(repoName, taskStem, mtime, -1);
+      const until = stamp(limit.untilMs);
       log(
         `⏳ ${filename} — usage limit at ${activeTier.label}, waiting until ${until}`,
       );
@@ -305,7 +317,7 @@ async function runRepo(repoName, repoPath) {
 async function tick() {
   const cooldown = state.cooldownUntil();
   if (cooldown) {
-    log(`⏳ waiting out usage limit until ${new Date(cooldown).toISOString()}`);
+    log(`⏳ waiting out usage limit until ${stamp(cooldown)}`);
     return;
   }
   const entries = Object.entries(cfg.repos);
@@ -327,8 +339,7 @@ async function check() {
     `herdr: ${cfg.useHerdr ? ((await herdrUp()) ? "up" : "ENABLED BUT DOWN") : "off"}`,
   );
   const cooldown = state.cooldownUntil();
-  if (cooldown)
-    log(`⏳ usage limit — waiting until ${new Date(cooldown).toISOString()}`);
+  if (cooldown) log(`⏳ usage limit — waiting until ${stamp(cooldown)}`);
   const { blocked } = state.snapshot();
   for (const [name, repoPath] of Object.entries(cfg.repos)) {
     const dir = todoDir(repoPath);

@@ -26,7 +26,7 @@ import { blockedFile, listPending, pick, stemOf, todoDir } from "./queue.js";
 import { closeLoop } from "./kanban.js";
 import * as state from "./state.js";
 
-const cfg = loadConfig();
+let cfg = loadConfig();
 const interactive = process.argv.includes("--interactive");
 // Local wall-clock, not UTC: the human reading the log is in the machine's own
 // timezone, and a UTC prefix here reads as "off by my offset" (task-018).
@@ -370,6 +370,16 @@ if (process.argv.includes("--check")) {
     `watching ${Object.keys(cfg.repos).length} repo(s) every ${cfg.pollSeconds}s`,
   );
   for (;;) {
+    try {
+      const next = loadConfig();
+      if (Object.keys(next.repos).length !== Object.keys(cfg.repos).length)
+        log(
+          `watching ${Object.keys(next.repos).length} repo(s) every ${next.pollSeconds}s`,
+        );
+      cfg = next;
+    } catch (err) {
+      log("config reload failed, keeping previous config:", err.message);
+    }
     await tick().catch((err) => log("tick failed:", err.message));
     await new Promise((r) => setTimeout(r, cfg.pollSeconds * 1000));
   }

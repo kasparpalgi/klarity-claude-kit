@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>eu.todzz.claude-pricing</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <!-- Replace with: which node -->
+    <string>/opt/homebrew/bin/node</string>
+    <!-- Replace with the absolute path to this repo's scripts/fetch-claude-pricing.mjs -->
+    <string>/Users/YOUR_NAME/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner/scripts/fetch-claude-pricing.mjs</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <!-- Must be the runner directory so config.json is found -->
+  <string>/Users/YOUR_NAME/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Node needs HOME so it can find .npmrc / .nvm / etc. -->
+    <key>HOME</key>
+    <string>/Users/YOUR_NAME</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <!-- Every 3 days. launchd has no native "every N days" trigger, so this uses
+       StartInterval (seconds); a sleeping Mac just fires it on next wake. -->
+  <key>StartInterval</key>
+  <integer>259200</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOUR_NAME/Library/Logs/claude-pricing.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/YOUR_NAME/Library/Logs/claude-pricing.log</string>
+</dict>
+</plist>

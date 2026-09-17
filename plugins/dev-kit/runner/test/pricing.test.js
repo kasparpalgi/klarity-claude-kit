@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mapLitellmPricing, fetchClaudePricing } from "../src/pricing.js";
+import {
+  mapLitellmPricing,
+  fetchClaudePricing,
+  upsertPricing,
+} from "../src/pricing.js";
 
 const SAMPLE = {
   "claude-sonnet-5": {
@@ -69,4 +73,28 @@ test("fetchClaudePricing maps an injected response", async () => {
 test("fetchClaudePricing throws on a non-OK response", async () => {
   const fake = async () => ({ ok: false, status: 503 });
   await assert.rejects(fetchClaudePricing("x", fake), /HTTP 503/);
+});
+
+test("upsertPricing sends rows as an on_conflict upsert and returns the count", async () => {
+  const rows = mapLitellmPricing(SAMPLE);
+  let seen;
+  const gqlFn = async (kanban, query, variables) => {
+    seen = { kanban, query, variables };
+    return { insert_claude_model_pricing: { affected_rows: rows.length } };
+  };
+  const kanban = { endpoint: "https://x", adminSecret: "s" };
+  const affected = await upsertPricing(kanban, rows, gqlFn);
+  assert.equal(affected, 2);
+  assert.equal(seen.kanban, kanban);
+  assert.match(seen.query, /on_conflict/);
+  assert.match(seen.query, /claude_model_pricing_pkey/);
+  assert.equal(seen.variables.rows.length, 2);
+  assert.ok(seen.variables.rows[0].updated_at);
+});
+
+test("upsertPricing skips the request for an empty row set", async () => {
+  const gqlFn = async () => {
+    throw new Error("should not be called");
+  };
+  assert.equal(await upsertPricing({}, [], gqlFn), 0);
 });

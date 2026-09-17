@@ -57,3 +57,52 @@ export async function fetchClaudePricing(url = LITELLM_URL, fetchFn = fetch) {
   if (!res.ok) throw new Error(`LiteLLM price list HTTP ${res.status}`);
   return mapLitellmPricing(await res.json());
 }
+
+const UPSERT = `mutation U($rows: [claude_model_pricing_insert_input!]!) {
+  insert_claude_model_pricing(
+    objects: $rows
+    on_conflict: {
+      constraint: claude_model_pricing_pkey
+      update_columns: [
+        input_per_mtok
+        output_per_mtok
+        cache_write_per_mtok
+        cache_read_per_mtok
+        currency
+        source
+        updated_at
+      ]
+    }
+  ) { affected_rows }
+}`;
+
+/**
+ * Upsert pricing rows into Hasura, keyed on `model`. `gqlFn` is injectable for a
+ * unit test — it defaults to a plain POST against `kanban.endpoint` with the
+ * admin secret, the same shape `kanban.js`'s `gql()` uses.
+ */
+export async function upsertPricing(kanban, rows, gqlFn = defaultGql) {
+  if (!rows.length) return 0;
+  const objects = rows.map((r) => ({
+    ...r,
+    updated_at: new Date().toISOString(),
+  }));
+  const data = await gqlFn(kanban, UPSERT, { rows: objects });
+  return data.insert_claude_model_pricing.affected_rows;
+}
+
+async function defaultGql(kanban, query, variables) {
+  const res = await fetch(kanban.endpoint, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-hasura-admin-secret": kanban.adminSecret,
+    },
+    body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(15000),
+  });
+  const body = await res.json();
+  if (body.errors)
+    throw new Error(body.errors.map((e) => e.message).join("; "));
+  return body.data;
+}

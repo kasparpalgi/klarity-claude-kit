@@ -170,6 +170,25 @@ tail -f ~/Library/Logs/kanban-runner.log
 <string>/Users/YOU/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
 ```
 
+### Claude pricing sync (launchd)
+
+Keeps `claude_model_pricing` in Hasura current from LiteLLM's price list, every ~3
+days:
+
+```bash
+node scripts/fetch-claude-pricing.mjs --dry-run   # preview, no write
+node scripts/fetch-claude-pricing.mjs             # fetch + upsert
+
+# Auto-run on macOS (separate daemon from the task runner above):
+cp launchd-pricing.plist.example ~/Library/LaunchAgents/eu.todzz.claude-pricing.plist
+# Edit: PATH, WorkingDirectory, HOME
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/eu.todzz.claude-pricing.plist
+tail -f ~/Library/Logs/claude-pricing.log
+```
+
+It reads `endpoint`/`adminSecret` from the same `config.json` as the task runner —
+no separate credentials to manage.
+
 ### Legacy: tmux + `--interactive`
 
 `--interactive` predates the herdr path: it drops `--dangerously-skip-permissions` and

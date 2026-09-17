@@ -43,7 +43,8 @@ export function titleOf(text, filename) {
   return m ? m[1].trim() : basename(filename, ".md");
 }
 
-async function gql(kanban, query, variables) {
+/** POST a GraphQL op with the admin secret. Shared with `sessionUsage.js`. */
+export async function gql(kanban, query, variables) {
   const res = await fetch(kanban.endpoint, {
     method: "POST",
     headers: {

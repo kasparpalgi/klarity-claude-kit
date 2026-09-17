@@ -23,7 +23,8 @@ import {
   autoFinish,
 } from "./repo.js";
 import { blockedFile, listPending, pick, stemOf, todoDir } from "./queue.js";
-import { closeLoop } from "./kanban.js";
+import { cardIdOf, closeLoop } from "./kanban.js";
+import { recordUsage } from "./sessionUsage.js";
 import * as state from "./state.js";
 
 let cfg = loadConfig();
@@ -145,6 +146,9 @@ async function runRepo(repoName, repoPath) {
   log(`▶ ${repoName} ${filename} (${tier.label}, attempt ${attempt})`);
 
   const { stdout: before } = await git(["rev-parse", "HEAD"], repoPath);
+  // Claude Code names its transcript after the session, not the task, so the
+  // only handle we get on "the file this run wrote" is the clock (#21 step 1).
+  const runStartMs = Date.now();
 
   // The CLI only tells us the usage wall was hit after the fact. A cheaper
   // tier spends the budget slower, so try stepping down before giving up and
@@ -191,6 +195,16 @@ async function runRepo(repoName, repoPath) {
 
   writeFileSync(logFile, output);
   log(`  log → ${logFile}`);
+
+  // Before any early return: a run that hit the wall, failed or finished dirty
+  // still spent tokens, and the transcript is on disk either way.
+  const spent = await recordUsage(cfg.kanban, {
+    repoName,
+    repoPath,
+    todoId: cardIdOf(content),
+    sinceMs: runStartMs,
+  }).catch((err) => `usage: not recorded — ${err.message}`);
+  if (spent) log(`  ${spent}`);
   // The run almost certainly touched the task file; adopt that mtime as ours so
   // only a *human* edit reads as "try this again".
   const taskFile = join(repoPath, dir, filename);

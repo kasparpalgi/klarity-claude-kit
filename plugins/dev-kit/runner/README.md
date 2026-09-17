@@ -189,6 +189,21 @@ tail -f ~/Library/Logs/claude-pricing.log
 It reads `endpoint`/`adminSecret` from the same `config.json` as the task runner —
 no separate credentials to manage.
 
+### Per-session token usage
+
+After every run — finished, failed or stopped at the usage wall — the runner reads
+the session transcript Claude Code left in
+`~/.claude/projects/<cwd-slug>/<session-id>.jsonl` and upserts one `claude_usage`
+row (`src/sessionUsage.js`): tokens per model, API-list cost from
+`claude_model_pricing`, and the card it belonged to. The row is keyed on
+`session_id`, so re-ingesting a transcript refreshes it instead of double-counting.
+The log line reads `usage: claude-opus-5 2271895 in / 29536 out → $2.3296`.
+
+Two things it deliberately tolerates: a model with no price row yet (LiteLLM lags a
+brand-new id by days) costs 0 and is named in the log, and a run whose transcript
+cannot be found is a log line, not a failure. Needs `endpoint`/`adminSecret` in
+`config.json`; without them the runner skips this entirely.
+
 ### Legacy: tmux + `--interactive`
 
 `--interactive` predates the herdr path: it drops `--dangerously-skip-permissions` and
@@ -333,6 +348,8 @@ silent no-op and nothing else changes.
 | `src/state.js`   | `~/.kanban-runner/state.json`: blocked reasons, attempt counts |
 | `src/herdr.js`   | run Claude in a herdr pane, wait out blocks |
 | `src/classify.js`| model + effort tier for a task file |
+| `src/pricing.js` | LiteLLM price list → `claude_model_pricing` rows |
+| `src/sessionUsage.js` | read a run's transcript → one `claude_usage` row |
 | `src/notify.js`  | Pushbullet |
 
 ## Notes

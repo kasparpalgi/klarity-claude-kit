@@ -126,6 +126,8 @@ export async function ignoreLogs(dir, cwd) {
  * file — a flood for what is one unchanged condition.
  */
 export async function preflight(cwd, taskDir, quietSeconds = 0) {
+  if (!existsSync(cwd))
+    return { kind: "missing", reason: `directory does not exist: ${cwd}` };
   const dirty = await dirtyPaths(cwd);
   if (dirty.length && dirty.every((p) => p.startsWith(taskDir + "/"))) {
     if (quietSeconds > 0) {

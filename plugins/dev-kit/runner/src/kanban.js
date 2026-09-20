@@ -87,6 +87,15 @@ const SAID = `query D($id: uuid!, $body: String!) {
   comments(where: {todo_id: {_eq: $id}, content: {_eq: $body}}, limit: 1) { id }
 }`;
 
+// Update only the file path — no list change. Used when the Review list does not
+// exist yet: the card stays where it is but still links to the -DONE file.
+const SET_PATH = `mutation P($id: uuid!, $path: String!) {
+  update_todos_by_pk(
+    pk_columns: {id: $id}
+    _set: {task_file_path: $path}
+  ) { id }
+}`;
+
 const NEW_CARD = `mutation N($o: [todos_insert_input!]!) {
   insert_todos(objects: $o) { returning { id title } }
 }`;
@@ -132,19 +141,32 @@ export async function closeLoop(
   const listId = (name) =>
     board.lists.find((l) => l.name.toLowerCase() === name.toLowerCase())?.id;
 
+  // Always point the card at the -DONE file so it links to the outcome even if
+  // the Review list does not exist yet (e.g. board was just created).
   const review = listId(kanban.lists.review);
   if (review) {
-    // Move the card and point it at the -DONE file; the Results live in the comment
-    // below, not in the card body — the body stays the request the person wrote.
     await gql(kanban, MOVE, { id, list: review, path: `${dir}/${done}` });
-    const { comments } = await gql(kanban, SAID, { id, body });
-    if (comments.length)
-      out.push(`card → ${kanban.lists.review} (results already posted)`);
-    else {
-      await gql(kanban, SAY, { id, user: board.user_id, body });
-      out.push(`card → ${kanban.lists.review}, results posted`);
-    }
-  } else out.push(`no "${kanban.lists.review}" list on the board`);
+  } else {
+    await gql(kanban, SET_PATH, { id, path: `${dir}/${done}` });
+    out.push(
+      `no "${kanban.lists.review}" list — card path updated but not moved`,
+    );
+  }
+
+  // Always post Results as a comment; idempotent so re-runs don't duplicate it.
+  const { comments } = await gql(kanban, SAID, { id, body });
+  if (comments.length)
+    out.push(
+      `${review ? `card → ${kanban.lists.review}` : "card"} (results already posted)`,
+    );
+  else {
+    await gql(kanban, SAY, { id, user: board.user_id, body });
+    out.push(
+      review
+        ? `card → ${kanban.lists.review}, results posted`
+        : `results posted (card not moved — create a "${kanban.lists.review}" list)`,
+    );
+  }
 
   out.push(
     ...(await fileFollowUps(kanban, { board, listId, full, dir, added })),

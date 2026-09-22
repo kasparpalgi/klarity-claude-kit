@@ -9,8 +9,9 @@
  * `019-task012Fix-TODO.md` (issue #19) invisible the moment the Kanban wrote it.
  */
 
-import { readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { machineOf } from "./machine.js";
 import { notify } from "./notify.js";
 import * as state from "./state.js";
 
@@ -45,12 +46,19 @@ export function listPending(repoPath, dir) {
   return names
     .filter((n) => /-TODO\.md$/i.test(n) && numberOf(n) && !over.has(stemOf(n)))
     .sort((a, b) => Number(numberOf(a)) - Number(numberOf(b)))
-    .map((name) => ({
-      name,
-      number: numberOf(name),
-      stem: stemOf(name),
-      mtime: statSync(join(repoPath, dir, name)).mtimeMs,
-    }));
+    .map((name) => {
+      const path = join(repoPath, dir, name);
+      // The owning machine is read here, alongside the stat, so nothing
+      // downstream has to open the file a second time.
+      return {
+        name,
+        number: numberOf(name),
+        stem: stemOf(name),
+        path,
+        machine: machineOf(readFileSync(path, "utf8")),
+        mtime: statSync(path).mtimeMs,
+      };
+    });
 }
 
 /** The `-BLOCKED.md` this stem ended as, if it did — the agent's half is finished. */

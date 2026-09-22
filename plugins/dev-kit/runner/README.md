@@ -263,6 +263,42 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 | `unattended`     | on the herdr path, skip permissions instead of asking (true here) |
 | `taskMinutes`    | cap on one `/todo` run (default 45)                             |
 | `blockedMinutes` | how long to wait for a human to answer a prompt (default 30)    |
+| `machine`        | this computer's id — a string or a list of spellings it answers to. Unset means it is the only runner and takes every task |
+| `machineDefault` | this machine also takes tasks with no `> Machine:` line (default false) |
+
+## Which machine runs it
+
+More than one computer can watch the same repos — a Mac and an Ubuntu box, each with
+its own clone, its own herdr and its own daemon. They also see the same `-TODO.md`
+files, so without an owner per task they would both pick the lowest one on the same
+tick and run it twice.
+
+The task file names the owner, right under the tier line:
+
+```
+> Run with: Opus 5 / high
+> Machine: karel
+```
+
+Each runner sets its own id in `config.json` and takes only the tasks addressed to it:
+
+```json
+{ "machine": "karel" }                        // Karel, the Ubuntu box
+{ "machine": "mac", "machineDefault": true }  // this Mac
+```
+
+A file with **no** `> Machine:` line is unaddressed — every task file written before
+this existed. Exactly one machine may claim those, the one with `machineDefault`.
+Leave it off everywhere else, or the double-run comes back.
+
+`machine` also accepts a list (`["karel", "karel-ubuntu"]`) so a board label spelled
+differently than the config still lands. A task addressed to a name **no** runner
+answers to is not an error anywhere — it simply never runs. `--check` is where you
+see that: it prints `[→ karel, not this machine]` next to every pending task that
+belongs elsewhere.
+
+Setting `machine` on a single-runner setup is optional; unset means "the only machine
+there is", which is what every existing install keeps doing.
 
 ## Model & effort
 

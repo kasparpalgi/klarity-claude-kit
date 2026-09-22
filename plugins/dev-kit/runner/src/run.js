@@ -23,6 +23,7 @@ import {
   autoFinish,
 } from "./repo.js";
 import { blockedFile, listPending, pick, stemOf, todoDir } from "./queue.js";
+import { machineFilter, machineOf, mine } from "./machine.js";
 import { cardIdOf, closeLoop } from "./kanban.js";
 import { recordUsage } from "./sessionUsage.js";
 import * as state from "./state.js";
@@ -129,7 +130,9 @@ async function runRepo(repoName, repoPath) {
     }
   }
 
-  const task = await pick(repoName, pending);
+  // Another machine's tasks stay in the list (they are still pending, and their
+  // attempt counts are still ours to prune) but are never picked here.
+  const task = await pick(repoName, mine(pending, machineFilter(cfg)));
   if (!task) return false;
   let { name: filename } = task;
   const { stem: taskStem, number, mtime } = task;
@@ -352,6 +355,10 @@ async function check() {
   log(
     `herdr: ${cfg.useHerdr ? ((await herdrUp()) ? "up" : "ENABLED BUT DOWN") : "off"}`,
   );
+  log(
+    `machine: ${cfg.machine ?? "(unset — takes every task)"}${cfg.machineDefault ? " + unaddressed" : ""}`,
+  );
+  const isMine = machineFilter(cfg);
   const cooldown = state.cooldownUntil();
   if (cooldown) log(`⏳ usage limit — waiting until ${stamp(cooldown)}`);
   const { blocked } = state.snapshot();
@@ -366,10 +373,15 @@ async function check() {
     const dirty = await dirtyPaths(repoPath).catch(() => []);
     if (dirty.length) log(`  dirty: ${dirty.slice(0, 6).join(", ")}`);
     if (blocked[name]) log(`  ⛔ blocked: ${blocked[name]}`);
-    for (const p of listPending(repoPath, dir)) {
+    const pending = listPending(repoPath, dir);
+    const ours = new Set(mine(pending, isMine).map((p) => p.name));
+    for (const p of pending) {
       const n = state.tries(name, p.stem, p.mtime);
+      const who = ours.has(p.name)
+        ? ""
+        : `  [→ ${p.machine ?? "unaddressed"}, not this machine]`;
       log(
-        `  pending: ${p.name}${n ? `  [${n} attempt(s)${n >= 2 ? ", skipped" : ""}]` : ""}`,
+        `  pending: ${p.name}${n ? `  [${n} attempt(s)${n >= 2 ? ", skipped" : ""}]` : ""}${who}`,
       );
     }
   }

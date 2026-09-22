@@ -22,14 +22,19 @@ The `-DONE.md` rename **is** the state. No database, no marker files — restart
 ## Connect a new project
 
 Connect the board to its GitHub repo on todzz.eu and set the *agent list* — the column
-that means "ready for Claude". A card entering that list makes the server write
-`NNN-slug-TODO.md` into the repo and push it. Then, on the Mac:
+that means "ready for Claude". That is the whole of it. Within `onboardMinutes` each
+running daemon notices the new board and sets itself up for it; the phone gets a
+`Runner ＋ new repo` when it is watched. A card entering the agent list then makes the
+server write `NNN-slug-TODO.md` into the repo and push it.
+
+To do it now rather than wait — or to repair a repo whose setup half-finished — run it
+by hand, which also drives the peer over ssh:
 
 ```bash
 npm run onboard          # --dry-run first if you want to see the plan
 ```
 
-That reads every connected, unarchived board and does the rest **on both machines**:
+Either way it reads every connected, unarchived board and does the rest:
 
 | It does | How it decides |
 | ------- | -------------- |
@@ -41,8 +46,10 @@ That reads every connected, unarchived board and does the rest **on both machine
 | Installs dependencies | Fresh clones only, by lockfile: pnpm / bun / yarn / `npm ci` / `uv sync` / `go mod download` / `cargo fetch`. `--no-install` skips it |
 | Commits and pushes all of it | An untracked file outside the task folder is a dirty tree to preflight, which would block the repo forever. The commit is path-scoped, so a repo mid-edit keeps its own work out of it |
 
-Then the peers in `config.json` get the same run over ssh — the peer pulls this repo
-first, so both machines run the same version — and Karel ends up with the identical
+The automatic sweep is this machine only: Karel watches the same boards and adopts
+them itself, so an ssh pass from inside its tick loop would only duplicate the work.
+The hand-run command still drives the peers in `config.json` over ssh — the peer pulls
+this repo first, so both machines run the same version — and Karel ends up with the identical
 clone, config entry and plugin, except that it just pulls the setup commit the first
 machine pushed:
 
@@ -263,7 +270,8 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 | `blockedMinutes` | how long to wait for a human to answer a prompt (default 30)    |
 | `machine`        | this computer's id — a string or a list of spellings it answers to. Unset means it is the only runner and takes every task |
 | `machineDefault` | this machine also takes tasks with no `> Machine:` line (default false) |
-| `codeRoot`       | where `npm run onboard` looks for clones and puts new ones (default `~/Documents/GitHub`) |
+| `codeRoot`       | where onboarding looks for clones and puts new ones (default `~/Documents/GitHub`) |
+| `onboardMinutes` | how often the daemon adopts newly connected boards (default 5; `0` turns it off) |
 | `peers`          | host → this runner's folder on it; `npm run onboard` repeats itself there over ssh. Omit on the peer |
 
 ## Which machine runs it
@@ -356,7 +364,7 @@ notification both surface that timestamp, in local time.
 
 | Flag            | Effect                                              |
 | --------------- | --------------------------------------------------- |
-| `--check`       | Per repo: path, current branch, task folder, dirty paths, blocked reason, pending tasks with attempt counts — plus whether the herdr server is up. Runs nothing |
+| `--check`       | Connected boards and any not yet onboarded, then per repo: path, current branch, task folder, dirty paths, blocked reason, pending tasks with attempt counts — plus whether the herdr server is up. Runs nothing |
 | `--once`        | Run a single tick and exit. For tests and manual pokes |
 | `--interactive` | Legacy tmux mode: drop `--dangerously-skip-permissions`; inherit stdin |
 
@@ -382,6 +390,8 @@ silent no-op and nothing else changes.
 | `Runner ↗ task on a branch` | work was left on a task branch, pushed, waiting for your merge |
 | `Runner ⚠ did not finish` | the agent stopped without renaming the file or committing |
 | `Runner ⏭ stuck task` | two runs, no `-DONE` rename; the task is skipped |
+| `Runner ＋ new repo` | a newly connected board was cloned, scaffolded and is now watched |
+| `Runner ⚠ cannot onboard` | a connected board's repo would not clone or scaffold — said once, not every sweep |
 
 ## Files
 
@@ -395,7 +405,7 @@ silent no-op and nothing else changes.
 | `src/classify.js`| model + effort tier for a task file |
 | `src/pricing.js` | LiteLLM price list → `claude_model_pricing` rows |
 | `src/sessionUsage.js` | read a run's transcript → one `claude_usage` row |
-| `src/onboard.js` | connected boards → clones, `config.json` entries, the peer machine |
+| `src/onboard.js` | connected boards → clones, `config.json` entries, the peer machine. The daemon calls it on a timer |
 | `src/scaffold.js`| one clone → plugin enabled, task folder, CLAUDE.md, dependencies |
 | `src/notify.js`  | Pushbullet |
 

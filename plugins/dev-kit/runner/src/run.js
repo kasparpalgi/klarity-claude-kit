@@ -25,6 +25,7 @@ import {
 import { blockedFile, listPending, pick, stemOf, todoDir } from "./queue.js";
 import { machineFilter, machineOf, mine } from "./machine.js";
 import { cardIdOf, closeLoop } from "./kanban.js";
+import { onboard } from "./onboard.js";
 import { recordUsage } from "./sessionUsage.js";
 import * as state from "./state.js";
 
@@ -331,7 +332,45 @@ async function runRepo(repoName, repoPath) {
   return true;
 }
 
+/**
+ * Adopt boards connected since the last sweep. Connecting a board on the phone used
+ * to leave the repo uncloned and unlisted until someone ran `npm run onboard` by
+ * hand — which is how a new project looked like nothing had happened (task-031).
+ *
+ * This machine only: Karel runs the same daemon against the same boards and adopts
+ * them itself, so an ssh pass from inside the tick loop would only duplicate it.
+ */
+let nextSweepMs = 0;
+const announced = new Set();
+
+async function sweepBoards() {
+  if (!cfg.onboardMinutes || !cfg.kanban.endpoint || !cfg.kanban.adminSecret) return;
+  if (Date.now() < nextSweepMs) return;
+  nextSweepMs = Date.now() + cfg.onboardMinutes * 60000;
+  const r = await onboard({ peers: false, log }).catch((err) => {
+    log("board sweep failed:", err.message);
+    return null;
+  });
+  if (!r) return;
+  for (const e of r.landed) {
+    announced.delete(e.repo);
+    log(`＋ ${e.repo} → ${e.dir} — now watched`);
+    await notify(
+      "Runner ＋ new repo",
+      `${e.repo} (board: ${e.board})\n\n${e.dir}${e.stack ? `\n${e.stack}` : ""}`,
+    );
+  }
+  // Announce once: a repo that does not exist on GitHub yet would otherwise send
+  // the same failure every sweep, forever.
+  for (const e of r.failed) {
+    if (!announced.has(e.repo))
+      await notify("Runner ⚠ cannot onboard", `${e.repo} (board: ${e.board})\n\n${e.why}`);
+    announced.add(e.repo);
+  }
+}
+
 async function tick() {
+  await sweepBoards();
   const cooldown = state.cooldownUntil();
   if (cooldown) {
     log(`⏳ waiting out usage limit until ${stamp(cooldown)}`);
@@ -362,6 +401,15 @@ async function check() {
   const cooldown = state.cooldownUntil();
   if (cooldown) log(`⏳ usage limit — waiting until ${stamp(cooldown)}`);
   const { blocked } = state.snapshot();
+  if (cfg.onboardMinutes && cfg.kanban.adminSecret) {
+    try {
+      const { boards, todo } = await onboard({ dryRun: true, peers: false, log: () => {} });
+      const waiting = todo.map((t) => `${t.repo} → ${t.dir}`).join(", ");
+      log(`boards: ${boards.length} connected; ${waiting || "all onboarded"}`);
+    } catch (err) {
+      log(`boards: could not read them — ${err.message}`);
+    }
+  }
   for (const [name, repoPath] of Object.entries(cfg.repos)) {
     const dir = todoDir(repoPath);
     const branch = await git(["branch", "--show-current"], repoPath).then(

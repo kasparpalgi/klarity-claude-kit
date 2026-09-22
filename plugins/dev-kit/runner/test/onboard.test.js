@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dirFor, findClone, missing, originOf, repoOf } from "../src/onboard.js";
+import { dirFor, findClone, missing, onboard, originOf, repoOf } from "../src/onboard.js";
+import { loadConfig } from "../src/config.js";
+import { readFileSync } from "node:fs";
 import { claudeMd, mergeSettings, stackOf } from "../src/scaffold.js";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -114,4 +116,47 @@ test("findClone finds the repo wherever it was filed by hand", () => {
   assert.equal(findClone(root, "ezy-rent/ezy-iot"), join(root, "ezy", "ezy-iot"));
   assert.equal(findClone(root, "LIFE-EFFECT/Life-Effect-Front"), join(root, "customers", "life-effect", "life-effect-front"));
   assert.equal(findClone(root, "x/never-cloned"), null);
+});
+
+/** A config.json on disk plus a fetch that answers the BOARDS query with `boards`. */
+function fixture(boards, extra = {}) {
+  const root = mkdtempSync(join(tmpdir(), "onboard-"));
+  const path = join(root, "config.json");
+  writeFileSync(
+    path,
+    JSON.stringify({ endpoint: "http://x/v1/graphql", adminSecret: "s", repos: {}, codeRoot: root, ...extra }),
+  );
+  globalThis.fetch = async () => ({ json: async () => ({ data: { boards } }) });
+  return { root, path };
+}
+
+test("onboard --dry-run plans the missing board and writes no config", async () => {
+  const { root, path } = fixture([
+    { name: "Kirjanduse Selts", github: '{"full_name":"kasparpalgi/kirjanduse-selts"}', client_id: "c1" },
+  ]);
+  const r = await onboard({ configPath: path, dryRun: true, peers: false, log: () => {} });
+  assert.deepEqual(
+    r.todo.map((t) => [t.repo, t.dir, t.isNew]),
+    [["kasparpalgi/kirjanduse-selts", `${root}/customers/kirjanduse-selts`, true]],
+  );
+  assert.deepEqual(r.landed, []);
+  assert.deepEqual(JSON.parse(readFileSync(path, "utf8")).repos, {});
+});
+
+test("a board already in repos is left alone — no re-scaffold, no rewrite", async () => {
+  const { path } = fixture(
+    [{ name: "Kusp", github: '{"full_name":"kasparpalgi/kusp"}', client_id: null }],
+    { repos: { "kasparpalgi/kusp": "~/elsewhere/kusp" } },
+  );
+  const r = await onboard({ configPath: path, dryRun: true, peers: false, log: () => {} });
+  assert.deepEqual(r.todo, []);
+  assert.equal(JSON.parse(readFileSync(path, "utf8")).repos["kasparpalgi/kusp"], "~/elsewhere/kusp");
+});
+
+test("the daemon sweeps for new boards every 5 minutes unless told otherwise", () => {
+  const { path } = fixture([], { repos: { "a/b": "/tmp/b" } });
+  assert.equal(loadConfig(path).onboardMinutes, 5);
+  const off = join(mkdtempSync(join(tmpdir(), "cfg-")), "config.json");
+  writeFileSync(off, JSON.stringify({ repos: { "a/b": "/tmp/b" }, onboardMinutes: 0 }));
+  assert.equal(loadConfig(off).onboardMinutes, 0);
 });

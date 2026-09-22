@@ -18,6 +18,7 @@
 		"backlog": "Backlog"
 	},
 	"codeRoot": "~/Documents/GitHub",
+	"onboardMinutes": 5,
 	"peers": {
 		"karel": "~/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner"
 	}

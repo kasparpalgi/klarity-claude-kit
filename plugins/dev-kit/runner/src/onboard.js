@@ -11,6 +11,11 @@
  * Idempotent by construction: an existing config entry is never rewritten (paths
  * like `~/Documents/GitHub/ezy/ezy-iot` are placed by hand and must stay), and the
  * second machine pulls the setup commit the first one pushed.
+ *
+ * Being one command was still one command too many: a board connected on the phone
+ * sat there doing nothing until someone remembered to run it (task-031). The daemon
+ * now calls `onboard()` itself every `onboardMinutes`, so connecting the board is
+ * the whole of it. Each machine does its own — no ssh from the tick loop.
  */
 
 import { execFile } from "node:child_process";
@@ -132,10 +137,22 @@ async function onPeer(host, dir, args) {
   return (stdout + stderr).trimEnd();
 }
 
-async function main() {
-  const flag = (f) => process.argv.includes(f);
-  const [dryRun, all] = [flag("--dry-run"), flag("--all")];
-  const file = JSON.parse(readFileSync(CONFIG, "utf8"));
+/**
+ * One pass: every connected board this machine has no `repos` entry for gets a
+ * clone, a scaffold and a config entry. Returns what landed — the daemon calls
+ * this on a timer (task-031), so connecting a board is the only manual step left.
+ */
+export async function onboard({
+  configPath = CONFIG,
+  dryRun = false,
+  all = false,
+  install = true,
+  peers = true,
+  args = [],
+  log = console.log,
+  verbose = false,
+} = {}) {
+  const file = JSON.parse(readFileSync(configPath, "utf8"));
   const root = file.codeRoot ?? "~/Documents/GitHub";
   const { boards } = await gql(
     { endpoint: file.endpoint, adminSecret: file.adminSecret },
@@ -156,39 +173,56 @@ async function main() {
       isNew: !configured,
     };
   });
-  console.log(
-    `${boards.length} connected board(s); ${todo.length} ${all ? "to re-check" : `not in ${CONFIG.replace(homedir(), "~")}`}`,
-  );
+  if (verbose)
+    log(
+      `${boards.length} connected board(s); ${todo.length} ${all ? "to re-check" : `not in ${configPath.replace(homedir(), "~")}`}`,
+    );
 
   const landed = [];
+  const failed = [];
   for (const entry of todo) {
-    console.log(
-      `\n${entry.repo}  (board: ${entry.board})  → ${entry.dir}${entry.found ? "  [existing clone]" : ""}`,
+    log(
+      `onboarding ${entry.repo} (board: ${entry.board}) → ${entry.dir}${entry.found ? "  [existing clone]" : ""}`,
     );
     const r = await scaffold(entry.repo, expand(entry.dir), {
       dryRun,
-      install: !flag("--no-install"),
+      install,
     });
-    for (const s of r.steps) console.log(`  ✔ ${s}`);
-    for (const w of r.warnings) console.log(`  ⚠ ${w}`);
-    if (!r.failed && entry.isNew) landed.push(entry);
+    for (const s of r.steps) log(`  ✔ ${s}`);
+    for (const w of r.warnings) log(`  ⚠ ${w}`);
+    // `landed` is what the config gained, so a dry run lands nothing by definition.
+    if (r.failed) failed.push({ ...entry, why: r.warnings[0] ?? "scaffold failed" });
+    else if (entry.isNew && !dryRun) landed.push({ ...entry, stack: r.stack });
   }
 
-  if (dryRun) console.log("\n--dry-run: config.json not written");
-  else if (landed.length) {
-    addRepos(CONFIG, landed);
-    console.log(`\nadded ${landed.length} repo(s) to config.json — the runner reloads it each tick`);
+  if (dryRun) {
+    if (verbose) log("\n--dry-run: config.json not written");
+  } else if (landed.length) {
+    addRepos(configPath, landed);
+    log(`added ${landed.length} repo(s) to config.json — the runner reloads it each tick`);
   }
 
-  const peers = flag("--no-peers") ? {} : (file.peers ?? {});
-  for (const [host, dir] of Object.entries(peers)) {
-    console.log(`\n── ${host} ──`);
+  for (const [host, dir] of Object.entries(peers ? (file.peers ?? {}) : {})) {
+    log(`── ${host} ──`);
     try {
-      console.log(await onPeer(host, dir, process.argv.slice(2).concat("--no-peers")));
+      log(await onPeer(host, dir, args.concat("--no-peers")));
     } catch (err) {
-      console.log(`  ⚠ ${host} failed: ${String(err.message).split("\n")[0]}`);
+      log(`  ⚠ ${host} failed: ${String(err.message).split("\n")[0]}`);
     }
   }
+  return { boards, todo, landed, failed };
+}
+
+async function main() {
+  const flag = (f) => process.argv.includes(f);
+  await onboard({
+    dryRun: flag("--dry-run"),
+    all: flag("--all"),
+    install: !flag("--no-install"),
+    peers: !flag("--no-peers"),
+    args: process.argv.slice(2),
+    verbose: true,
+  });
 }
 
 if (process.argv[1] && resolve(process.argv[1]).endsWith("onboard.js"))

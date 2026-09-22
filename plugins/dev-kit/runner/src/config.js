@@ -31,6 +31,9 @@ export function loadConfig(
     machine: file.machine ?? null,
     // Exactly one machine may also take the unaddressed tasks.
     machineDefault: file.machineDefault ?? false,
+    // How often the daemon adopts newly connected boards. 0 turns it off and
+    // `npm run onboard` goes back to being the only way in.
+    onboardMinutes: file.onboardMinutes ?? 5,
     // Closing the card is optional: without an endpoint + adminSecret the runner
     // just does the files, exactly as before.
     kanban: {

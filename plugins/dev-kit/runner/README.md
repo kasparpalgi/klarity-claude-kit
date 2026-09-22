@@ -41,9 +41,10 @@ That reads every connected, unarchived board and does the rest **on both machine
 | Installs dependencies | Fresh clones only, by lockfile: pnpm / bun / yarn / `npm ci` / `uv sync` / `go mod download` / `cargo fetch`. `--no-install` skips it |
 | Commits and pushes all of it | An untracked file outside the task folder is a dirty tree to preflight, which would block the repo forever. The commit is path-scoped, so a repo mid-edit keeps its own work out of it |
 
-Then the peers in `config.json` get the same run over ssh, so Karel ends up with the
-identical clone, config entry and plugin — except the second machine just pulls the
-setup commit the first one pushed:
+Then the peers in `config.json` get the same run over ssh — the peer pulls this repo
+first, so both machines run the same version — and Karel ends up with the identical
+clone, config entry and plugin, except that it just pulls the setup commit the first
+machine pushed:
 
 ```json
 {

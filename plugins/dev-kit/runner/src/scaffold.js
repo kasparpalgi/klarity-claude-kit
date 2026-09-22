@@ -151,11 +151,20 @@ export async function scaffold(repo, dir, { dryRun = false, install = true } = {
     // Both halves are path-scoped: a repo mid-edit keeps its own work out of the
     // runner's setup commit.
     await run("git", ["add", "-A", ...paths], { cwd: dir });
-    const err =
-      (await run("git", ["commit", "-m", "chore: enable the dev-kit agent workflow", ...paths], { cwd: dir })) ??
-      (await run("git", ["push", "origin", "HEAD"], { cwd: dir }));
-    if (err) warnings.push(`could not push the setup commit: ${err}`);
-    else steps.push("committed and pushed the setup");
+    const err = await run("git", ["commit", "-m", "chore: enable the dev-kit agent workflow", ...paths], { cwd: dir });
+    if (err) warnings.push(`could not commit the setup: ${err}`);
+    else steps.push("committed the setup");
+  }
+
+  // Separate from the commit above: a rebase leaves the setup commit local, and a
+  // push that failed once left it local too. Neither is uncommitted, so neither
+  // would be retried if pushing were only ever the tail of a fresh commit.
+  const ahead = await exec("git", ["rev-list", "--count", "@{u}..HEAD"], { cwd: dir })
+    .then((r) => r.stdout.trim(), () => "0");
+  if (ahead !== "0") {
+    const err = await run("git", ["push", "origin", "HEAD"], { cwd: dir, timeout: 120_000 });
+    if (err) warnings.push(`${ahead} commit(s) will not push: ${err}`);
+    else steps.push(`pushed ${ahead} commit(s)`);
   }
 
   if (fresh && install && stack.install) {

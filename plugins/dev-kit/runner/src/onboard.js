@@ -122,7 +122,9 @@ function addRepos(path, added) {
 
 /** Run the same command on the other machine's clone of this runner. */
 async function onPeer(host, dir, args) {
-  const cmd = `cd ${dir} && node src/onboard.js ${args.join(" ")}`;
+  // Same command means same code: without the pull the peer runs whatever version
+  // of this file it last pulled, and reproduces bugs already fixed here.
+  const cmd = `git -C ${dir} pull -q --ff-only; cd ${dir} && node src/onboard.js ${args.join(" ")}`;
   const { stdout, stderr } = await exec("ssh", [host, cmd], {
     timeout: 1_800_000,
     maxBuffer: 1 << 24,

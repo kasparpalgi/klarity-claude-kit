@@ -8,7 +8,7 @@ See also [Kanban runner README](plugins/dev-kit/runner/README.md)
 
 ```bash
 # From GitHub (recommended — all machines stay in sync)
-claude plugin marketplace add kaspar-palgi/klarity-claude-kit
+claude plugin marketplace add kasparpalgi/klarity-claude-kit
 claude plugin install dev-kit@klarity
 
 # From a local clone (development / offline)

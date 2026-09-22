@@ -54,7 +54,7 @@ Three things have to line up: the **board**, the **repo**, and the **path on thi
 5. **Install the dev-kit plugin** once per machine, so the repo has `/todo`:
 
    ```bash
-   claude plugin marketplace add kaspar-palgi/klarity-claude-kit
+   claude plugin marketplace add kasparpalgi/klarity-claude-kit
    claude plugin install dev-kit@klarity
    ```
 

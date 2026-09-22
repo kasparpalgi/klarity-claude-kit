@@ -16,5 +16,9 @@
 	"lists": {
 		"review": "Review",
 		"backlog": "Backlog"
+	},
+	"codeRoot": "~/Documents/GitHub",
+	"peers": {
+		"karel": "~/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner"
 	}
 }

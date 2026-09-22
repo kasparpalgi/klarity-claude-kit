@@ -21,54 +21,51 @@ The `-DONE.md` rename **is** the state. No database, no marker files — restart
 
 ## Connect a new project
 
-Three things have to line up: the **board**, the **repo**, and the **path on this Mac**.
+Connect the board to its GitHub repo on todzz.eu and set the *agent list* — the column
+that means "ready for Claude". A card entering that list makes the server write
+`NNN-slug-TODO.md` into the repo and push it. Then, on the Mac:
 
-1. **Board → repo.** On todzz.eu open the board, connect it to its GitHub repo, and set
-   the *agent list* — the column that means "ready for Claude". A card entering that list
-   makes the server write `NNN-slug-TODO.md` into the repo and push it.
+```bash
+npm run onboard          # --dry-run first if you want to see the plan
+```
 
-2. **Clone the repo to the computer.** Tested only on Mac. That computer must work when you expect the sessions run when moving card to the list that shall run the agent session. The runner only ever watches local clones:
+That reads every connected, unarchived board and does the rest **on both machines**:
 
-   ```bash
-   git clone git@github.com:owner/repo.git ~/somewhere/klarity-claude-kit
-   ```
+| It does | How it decides |
+| ------- | -------------- |
+| Finds the clone, or makes one | An existing checkout whose `origin` is that repo wins, wherever it was filed. Otherwise `gh repo clone` into `customers/<repo>` when the board has a client, `<repo>` when it does not |
+| Adds it to `config.json` | Only repos not already listed — a hand-placed path like `ezy/ezy-iot` is never rewritten. The daemon reloads the file each tick, so there is nothing to restart |
+| Enables `dev-kit@klarity` for the repo | Merged into the repo's own `.claude/settings.json`, keeping whatever is already in it |
+| Gives it a task folder | `doc/todo/`, unless the repo already keeps one at `.claude/todo/` |
+| Writes a `CLAUDE.md` stub | Only when there is none: the repo, the detected stack, and the `/plan` → `/todo` → `/verify` table |
+| Installs dependencies | Fresh clones only, by lockfile: pnpm / bun / yarn / `npm ci` / `uv sync` / `go mod download` / `cargo fetch`. `--no-install` skips it |
+| Commits and pushes all of it | An untracked file outside the task folder is a dirty tree to preflight, which would block the repo forever. The commit is path-scoped, so a repo mid-edit keeps its own work out of it |
 
-3. **Add that path to `config.json`** (in this folder, gitignored). The key is
-   `owner/repo` as GitHub spells it, the value is the **absolute path on this Mac** —
-   `~/` is expanded at runtime:
+Then the peers in `config.json` get the same run over ssh, so Karel ends up with the
+identical clone, config entry and plugin — except the second machine just pulls the
+setup commit the first one pushed:
 
-   ```json
-   {
-     "pollSeconds": 20,
-     "useHerdr": true,
-     "repos": {
-       "kasparpalgi/svelte-hasura-boilerplate": "~/Documents/GitHub/svelte-hasura-boilerplate",
-       "kasparpalgi/my-new-project": "~/Documents/GitHub/my-new-project"
-     }
-   }
-   ```
+```json
+{
+  "codeRoot": "~/Documents/GitHub",
+  "peers": { "karel": "~/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner" }
+}
+```
 
-4. **Give the repo a task folder** — `doc/todo/` or `.claude/todo/`. The runner prefers
-   `.claude/todo` when it exists and falls back to `doc/todo`.
+Leave `peers` off on the peer itself. Re-running is safe and is the point: it is how a
+board connected last week catches up. Nothing here picks the **machine** a task runs
+on — that is the task file's `> Machine:` line, below.
 
-5. **Install the dev-kit plugin** once per machine, so the repo has `/todo`:
+Still manual, once per machine, not per project:
 
-   ```bash
-   claude plugin marketplace add kasparpalgi/klarity-claude-kit
-   claude plugin install dev-kit@klarity
-   ```
+```bash
+claude plugin marketplace add kasparpalgi/klarity-claude-kit
+claude plugin install dev-kit@klarity
+```
 
-6. **Check, then restart the daemon:**
-
-   ```bash
-   npm run check                                       # paths, branches, pending tasks
-   launchctl kickstart -k gui/$(id -u)/eu.todzz.kanban-runner
-   tail -f ~/Library/Logs/kanban-runner.log
-   ```
-
-The repo's `CLAUDE.md` must let `/todo` commit to the base branch. A repo that tells
-agents to branch per task will still work, but every card stops for a manual merge — see
-*Task left on a branch* below.
+A repo's `CLAUDE.md` must let `/todo` commit to the base branch. One that tells agents
+to branch per task still works, but every card stops for a manual merge — see *Task
+left on a branch* below. Check the result with `npm run check`.
 
 ## Guards — why it never wedges
 
@@ -265,6 +262,8 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 | `blockedMinutes` | how long to wait for a human to answer a prompt (default 30)    |
 | `machine`        | this computer's id — a string or a list of spellings it answers to. Unset means it is the only runner and takes every task |
 | `machineDefault` | this machine also takes tasks with no `> Machine:` line (default false) |
+| `codeRoot`       | where `npm run onboard` looks for clones and puts new ones (default `~/Documents/GitHub`) |
+| `peers`          | host → this runner's folder on it; `npm run onboard` repeats itself there over ssh. Omit on the peer |
 
 ## Which machine runs it
 
@@ -360,6 +359,14 @@ notification both surface that timestamp, in local time.
 | `--once`        | Run a single tick and exit. For tests and manual pokes |
 | `--interactive` | Legacy tmux mode: drop `--dangerously-skip-permissions`; inherit stdin |
 
+`npm run onboard` (`src/onboard.js`) takes its own:
+
+| Flag | Effect |
+| ---- | ------ |
+| `--dry-run` | Print the plan — which repos are missing, where each would land. Writes nothing |
+| `--no-install` | Clone and configure, but do not run the stack's install command |
+| `--no-peers` | This machine only. Passed automatically to each peer, so they never recurse |
+
 ## Phone notifications
 
 Pushbullet, via `PUSHBULLET_ACCESS_TOKEN`. No token means every notification is a
@@ -386,6 +393,8 @@ silent no-op and nothing else changes.
 | `src/classify.js`| model + effort tier for a task file |
 | `src/pricing.js` | LiteLLM price list → `claude_model_pricing` rows |
 | `src/sessionUsage.js` | read a run's transcript → one `claude_usage` row |
+| `src/onboard.js` | connected boards → clones, `config.json` entries, the peer machine |
+| `src/scaffold.js`| one clone → plugin enabled, task folder, CLAUDE.md, dependencies |
 | `src/notify.js`  | Pushbullet |
 
 ## Notes

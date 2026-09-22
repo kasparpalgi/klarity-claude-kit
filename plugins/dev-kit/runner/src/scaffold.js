@@ -14,11 +14,15 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
+
+/** Why it failed, in one line: git says "To <url>" before it says what went wrong. */
+const why = (err) => {
+  const lines = String(err.stderr || err.message).trim().split("\n");
+  return lines.find((l) => /^(error|fatal|!)/.test(l.trim())) ?? lines[0];
+};
+
 const run = (cmd, args, opts = {}) =>
-  exec(cmd, args, { maxBuffer: 1 << 24, ...opts }).then(
-    () => null,
-    (err) => String(err.stderr || err.message).trim().split("\n")[0],
-  );
+  exec(cmd, args, { maxBuffer: 1 << 24, ...opts }).then(() => null, why);
 
 /** First lockfile wins: `npm ci` needs the lock, `npm install` is the fallback. */
 const STACKS = [
@@ -107,6 +111,19 @@ export async function scaffold(repo, dir, { dryRun = false, install = true } = {
     steps.push(`cloned → ${dir}`);
   } else if (!existsSync(join(dir, ".git"))) {
     return { steps, warnings: [`${dir} exists but is not a git clone`], failed: true };
+  } else if (!dryRun) {
+    // A stale clone would put the setup commit behind origin, and the push that
+    // follows is then rejected non-fast-forward — which is how it read the first time.
+    await run("git", ["fetch", "origin"], { cwd: dir, timeout: 120_000 });
+    if (await run("git", ["pull", "--ff-only"], { cwd: dir, timeout: 120_000 })) {
+      // Diverged, not merely behind — a setup commit from a run whose push failed
+      // sits on an old base. Replaying it on origin is the same fix preflight() makes.
+      const err = await run("git", ["pull", "--rebase"], { cwd: dir, timeout: 120_000 });
+      if (err) {
+        await run("git", ["rebase", "--abort"], { cwd: dir });
+        warnings.push(`clone will not fast-forward or rebase onto origin: ${err}`);
+      } else steps.push("rebased onto origin");
+    }
   }
   if (dryRun) return { steps, warnings, cloned: false };
 
@@ -123,15 +140,22 @@ export async function scaffold(repo, dir, { dryRun = false, install = true } = {
     writeIfAbsent(join(dir, "doc", "todo", ".gitkeep"), "", steps, "created doc/todo/");
   writeIfAbsent(join(dir, "CLAUDE.md"), claudeMd(repo, stack.name), steps, "wrote CLAUDE.md stub");
 
-  if (steps.some((s) => !s.startsWith("cloned"))) {
-    // Both halves are path-scoped: a repo mid-edit keeps its own staged work out
-    // of the runner's setup commit.
-    const paths = ["--", "CLAUDE.md", ".claude", "doc"];
+  // Only what is actually there: git rejects the whole commit over one pathspec that
+  // matches nothing, and a repo keeping its tasks in .claude/todo has no doc/.
+  const paths = ["--", ...["CLAUDE.md", ".claude", "doc"].filter((p) => existsSync(join(dir, p)))];
+  // Keyed off what is uncommitted, not off what this run wrote: a setup file whose
+  // push failed last time is still sitting there dirty, blocking the repo.
+  const pending = await exec("git", ["status", "--porcelain", ...paths], { cwd: dir })
+    .then((r) => r.stdout.trim(), () => "");
+  if (pending) {
+    // Both halves are path-scoped: a repo mid-edit keeps its own work out of the
+    // runner's setup commit.
     await run("git", ["add", "-A", ...paths], { cwd: dir });
     const err =
       (await run("git", ["commit", "-m", "chore: enable the dev-kit agent workflow", ...paths], { cwd: dir })) ??
       (await run("git", ["push", "origin", "HEAD"], { cwd: dir }));
     if (err) warnings.push(`could not push the setup commit: ${err}`);
+    else steps.push("committed and pushed the setup");
   }
 
   if (fresh && install && stack.install) {

@@ -140,12 +140,23 @@ async function main() {
     BOARDS,
   );
 
-  const todo = missing(file.repos ?? {}, boards).map((e) => {
-    const found = findClone(expand(root), e.repo);
-    return { ...e, dir: found ? tilde(found) : dirFor(e.repo, e.hasClient, root), found: Boolean(found) };
+  // `missing({})` is every connected board, deduped — one repo, two boards, one entry.
+  const known = new Map(
+    Object.entries(file.repos ?? {}).map(([r, d]) => [r.toLowerCase(), d]),
+  );
+  const all = process.argv.includes("--all");
+  const todo = missing(all ? {} : Object.fromEntries(known), boards).map((e) => {
+    const configured = known.get(e.repo.toLowerCase());
+    const found = configured ?? findClone(expand(root), e.repo);
+    return {
+      ...e,
+      dir: found ? tilde(found) : dirFor(e.repo, e.hasClient, root),
+      found: Boolean(found),
+      isNew: !configured,
+    };
   });
   console.log(
-    `${boards.length} connected board(s); ${todo.length} not in ${CONFIG.replace(homedir(), "~")}`,
+    `${boards.length} connected board(s); ${todo.length} ${all ? "to re-check" : `not in ${CONFIG.replace(homedir(), "~")}`}`,
   );
 
   const landed = [];
@@ -159,7 +170,7 @@ async function main() {
     });
     for (const s of r.steps) console.log(`  ✔ ${s}`);
     for (const w of r.warnings) console.log(`  ⚠ ${w}`);
-    if (!r.failed) landed.push(entry);
+    if (!r.failed && entry.isNew) landed.push(entry);
   }
 
   if (dryRun) console.log("\n--dry-run: config.json not written");

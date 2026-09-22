@@ -365,6 +365,7 @@ notification both surface that timestamp, in local time.
 | ---- | ------ |
 | `--dry-run` | Print the plan — which repos are missing, where each would land. Writes nothing |
 | `--no-install` | Clone and configure, but do not run the stack's install command |
+| `--all` | Re-scaffold every connected board's repo, not just the ones missing from `config.json` — the repair path when a clone was left stale or a setup commit did not push |
 | `--no-peers` | This machine only. Passed automatically to each peer, so they never recurse |
 
 ## Phone notifications

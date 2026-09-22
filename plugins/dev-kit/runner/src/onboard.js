@@ -133,8 +133,8 @@ async function onPeer(host, dir, args) {
 }
 
 async function main() {
-  const dryRun = process.argv.includes("--dry-run");
-  const noInstall = process.argv.includes("--no-install");
+  const flag = (f) => process.argv.includes(f);
+  const [dryRun, all] = [flag("--dry-run"), flag("--all")];
   const file = JSON.parse(readFileSync(CONFIG, "utf8"));
   const root = file.codeRoot ?? "~/Documents/GitHub";
   const { boards } = await gql(
@@ -143,12 +143,11 @@ async function main() {
   );
 
   // `missing({})` is every connected board, deduped — one repo, two boards, one entry.
-  const known = new Map(
-    Object.entries(file.repos ?? {}).map(([r, d]) => [r.toLowerCase(), d]),
-  );
-  const all = process.argv.includes("--all");
-  const todo = missing(all ? {} : Object.fromEntries(known), boards).map((e) => {
-    const configured = known.get(e.repo.toLowerCase());
+  const repos = file.repos ?? {};
+  const pathOf = (repo) =>
+    Object.entries(repos).find(([r]) => r.toLowerCase() === repo.toLowerCase())?.[1];
+  const todo = missing(all ? {} : repos, boards).map((e) => {
+    const configured = pathOf(e.repo);
     const found = configured ?? findClone(expand(root), e.repo);
     return {
       ...e,
@@ -168,7 +167,7 @@ async function main() {
     );
     const r = await scaffold(entry.repo, expand(entry.dir), {
       dryRun,
-      install: !noInstall,
+      install: !flag("--no-install"),
     });
     for (const s of r.steps) console.log(`  ✔ ${s}`);
     for (const w of r.warnings) console.log(`  ⚠ ${w}`);
@@ -181,7 +180,7 @@ async function main() {
     console.log(`\nadded ${landed.length} repo(s) to config.json — the runner reloads it each tick`);
   }
 
-  const peers = process.argv.includes("--no-peers") ? {} : (file.peers ?? {});
+  const peers = flag("--no-peers") ? {} : (file.peers ?? {});
   for (const [host, dir] of Object.entries(peers)) {
     console.log(`\n── ${host} ──`);
     try {

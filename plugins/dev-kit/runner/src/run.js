@@ -26,6 +26,7 @@ import { blockedFile, listPending, pick, stemOf, todoDir } from "./queue.js";
 import { machineFilter, machineOf, mine } from "./machine.js";
 import { cardIdOf, closeLoop } from "./kanban.js";
 import { onboard } from "./onboard.js";
+import { trustProject } from "./trust.js";
 import { recordUsage } from "./sessionUsage.js";
 import * as state from "./state.js";
 
@@ -66,6 +67,9 @@ function shell(cmd, args, cwd) {
  * Falls back to the original headless child whenever herdr is off or down.
  */
 async function runTask({ repoName, filename, number, repoPath, model }) {
+  // Before the pane, not at clone time: a repo added to config.json by hand, or
+  // cloned by the peer, never passed through onboarding.
+  if (trustProject(repoPath)) log("  trusted the folder for Claude");
   if (cfg.useHerdr && (await herdrUp())) {
     const r = await runInHerdr({
       name: `task-${number}`,

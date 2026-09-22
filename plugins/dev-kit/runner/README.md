@@ -126,6 +126,12 @@ still reported to the phone if one happens; there are just far fewer of them.
 
 Safety rails:
 
+- **A fresh clone is trusted before the pane opens.** Claude asks "do you trust the
+  files in this folder?" the first time it starts interactively somewhere new. `-p`
+  skips that dialog, so the headless path never met it — but a pane is a real TTY,
+  and there it is a wall: the agent never registers, the log is two lines, and the
+  task burns an attempt. The runner now writes `hasTrustDialogAccepted` into
+  `~/.claude.json` for the repo before every run, once per repo (task-032).
 - herdr server down or `useHerdr` false → falls back to the headless child, logged as
   `herdr down — falling back to headless`. It never wedges on herdr's absence.
 - A block nobody answers within `blockedMinutes` closes the tab and leaves the task
@@ -407,6 +413,7 @@ silent no-op and nothing else changes.
 | `src/sessionUsage.js` | read a run's transcript → one `claude_usage` row |
 | `src/onboard.js` | connected boards → clones, `config.json` entries, the peer machine. The daemon calls it on a timer |
 | `src/scaffold.js`| one clone → plugin enabled, task folder, CLAUDE.md, dependencies |
+| `src/trust.js`   | pre-answer Claude's folder-trust dialog in `~/.claude.json` |
 | `src/notify.js`  | Pushbullet |
 
 ## Notes

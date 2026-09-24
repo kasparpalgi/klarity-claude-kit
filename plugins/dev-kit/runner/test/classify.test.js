@@ -19,6 +19,12 @@ test("downgrade steps down family once effort is already low", () => {
   assert.equal(step.model, explicitTier("Run with: sonnet").model);
 });
 
+test("explicitTier resolves Opus 5.5 to its own model id", () => {
+  const t = explicitTier("Run with: Opus 5.5 / high");
+  assert.equal(t.model, "claude-opus-5-5");
+  assert.equal(t.effort, "high");
+});
+
 test("downgrade returns null once already at the cheapest tier", () => {
   const haikuLow = explicitTier("Run with: haiku / low");
   assert.equal(downgrade(haikuLow), null);

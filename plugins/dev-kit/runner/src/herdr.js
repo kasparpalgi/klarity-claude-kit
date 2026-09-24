@@ -119,6 +119,10 @@ async function promptAgent(name, prompt, taskMs) {
  */
 export async function runInHerdr(opts) {
   const { name, cwd, args, prompt, taskMs, blockedMs, onBlocked } = opts;
+  // False until a wait actually hands us an agent. `agent start` resolving is
+  // not proof: it answered `agent_not_ready` for a pane that never registered
+  // one at all, and the next call said `agent_not_found` (task-032).
+  let started = false;
   await reap();
   const ws = await ensureWorkspace(cwd);
   const args0 = ["tab", "create", "--workspace", ws, "--cwd", cwd];
@@ -160,14 +164,16 @@ export async function runInHerdr(opts) {
       if (!/agent_not_ready/.test(err.message)) throw err;
     });
 
-    await clear((await waitFor(name, SETTLED, 60000)).agent);
+    const first = await waitFor(name, SETTLED, 60000);
+    started = true;
+    await clear(first.agent);
     // A still-blocked agent makes promptAgent fail with agent_blocked, below.
     const { agent } = await promptAgent(name, prompt, taskMs);
     const stuck = (await clear(agent)).agent_status === "blocked";
-    return { code: stuck ? 1 : 0, output: await readPane(name) };
+    return { code: stuck ? 1 : 0, output: await readPane(name), started };
   } catch (err) {
     // A herdr timeout or CLI error is a stuck run, not a crash: keep the log.
-    return { code: 1, output: await readPane(name), err: err.message };
+    return { code: 1, output: await readPane(name), err: err.message, started };
   }
   // Deliberately no `finally` close: the pane stays open at the shell prompt so
   // a human can type a follow-up and close it themselves. The next run's reap()

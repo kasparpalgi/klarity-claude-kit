@@ -164,16 +164,24 @@ async function runRepo(repoName, repoPath) {
   let activeTier = tier;
   let code,
     output,
+    started = true,
+    retriedStart = false,
     waitingOnLimit = false;
   for (;;) {
     const model = ["--model", activeTier.model, "--effort", activeTier.effort];
-    ({ code, output } = await runTask({
-      repoName,
-      filename,
-      number,
-      repoPath,
-      model,
-    }));
+    const r = await runTask({ repoName, filename, number, repoPath, model });
+    ({ code, output } = r);
+    started = r.started !== false;
+    // A pane that never registered an agent means the task never ran: herdr
+    // lost the tab, or its shell was not up yet when the agent started. Both
+    // clear on a second try, and a fresh pane costs seconds — so retry here,
+    // in this tick, instead of burning an attempt on a wall the agent never
+    // saw. Two of those retired task-032's first task before it ever spoke.
+    if (!started && !retriedStart) {
+      retriedStart = true;
+      log(`  ${filename} — no agent in the pane, retrying once`);
+      continue;
+    }
     const limit = usageLimitHit(output);
     if (!limit) break;
     const cheaper = downgrade(activeTier);
@@ -224,10 +232,13 @@ async function runRepo(repoName, repoPath) {
   if (code !== 0) {
     // Clear our own leftover dirt so a stuck run can't block the repo forever.
     const parked = await parkDirty(repoPath, filename);
-    log(`✘ ${filename} exit ${code}${parked ? " — parked leftover work" : ""}`);
+    // "exit 1" over a two-line herdr error reads as "the agent failed"; it did
+    // not run at all, which is a different thing to go and look at.
+    const why = started ? `exit ${code}` : "the agent never started in its pane";
+    log(`✘ ${filename} ${why}${parked ? " — parked leftover work" : ""}`);
     await notify(
       "Runner ✘",
-      `${repoName} ${filename} exit ${code}${parked ? "\n\nUncommitted work parked in a stash — `git stash pop` to recover." : ""}\n\n${tail(output)}`,
+      `${repoName} ${filename} ${why}${parked ? "\n\nUncommitted work parked in a stash — `git stash pop` to recover." : ""}\n\n${tail(output)}`,
     );
     return true;
   }

@@ -34,7 +34,11 @@ const FAMILIES = {
     name: "Sonnet",
     effort: "medium",
     latest: "5",
-    versions: { 4.6: "claude-sonnet-4-6", 5: "claude-sonnet-5" },
+    versions: {
+      4.6: "claude-sonnet-4-6",
+      5: "claude-sonnet-5",
+      5.5: "claude-sonnet-5-5",
+    },
   },
   haiku: {
     name: "Haiku",

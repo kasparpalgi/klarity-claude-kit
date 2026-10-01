@@ -25,6 +25,12 @@ test("explicitTier resolves Opus 5.5 to its own model id", () => {
   assert.equal(t.effort, "high");
 });
 
+test("explicitTier resolves Sonnet 5.5 to its own model id", () => {
+  const t = explicitTier("Run with: Sonnet 5.5 / medium");
+  assert.equal(t.model, "claude-sonnet-5-5");
+  assert.equal(t.label, "Sonnet 5.5 / medium");
+});
+
 test("downgrade returns null once already at the cheapest tier", () => {
   const haikuLow = explicitTier("Run with: haiku / low");
   assert.equal(downgrade(haikuLow), null);

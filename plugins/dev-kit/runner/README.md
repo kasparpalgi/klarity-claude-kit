@@ -289,7 +289,31 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 | `machineDefault` | this machine also takes tasks with no `> Machine:` line (default false) |
 | `codeRoot`       | where onboarding looks for clones and puts new ones (default `~/Documents/GitHub`) |
 | `onboardMinutes` | how often the daemon adopts newly connected boards (default 5; `0` turns it off) |
-| `peers`          | host → this runner's folder on it; `npm run onboard` repeats itself there over ssh. Omit on the peer |
+| `peers`          | host → this runner's folder on it; `npm run onboard` repeats itself there over ssh, and the sweep pushes secrets there. Omit on the peer |
+
+## Secrets on the peers
+
+A clone brings the code, not the keys: `.env` is gitignored, so a peer that adopted a
+board had none of them, and a task that needed a database URL failed there and passed
+on the Mac. The Mac is the source. Every board sweep it hashes its gitignored secrets,
+asks each peer for the same hashes in one ssh call, and sends only the files that differ:
+
+```bash
+npm run sync-secrets -- --dry-run   # what would go where
+npm run sync-secrets                # do it now rather than wait for the sweep
+```
+
+| Rule | Why |
+| ---- | --- |
+| Files: `.env*` (not `.example`/`.sample`), `hasura/config.yaml`, `.secrets/` — only when gitignored | A committed file is git's job |
+| Repos match by `owner/repo` key, not path | `job` is `customers/job` here and `job` on Dell |
+| A differing file is overwritten from the Mac | One source of truth; edit secrets on the Mac |
+| A file only the peer has is never touched | Put a peer-only override in a file the Mac does not have |
+| A repo the peer has not cloned yet is skipped | Its own sweep adopts it; the secrets follow one sweep later |
+| `COPYFILE_DISABLE=1` on the tar | macOS tar adds `._.env` beside each file — not gitignored, so it dirtied 14 repos on the peers and blocked them |
+
+Only a machine with `peers` in its config pushes, which is the Mac alone. A peer that is
+switched off is logged once, and again when it is back.
 
 ## Which machine runs it
 
@@ -424,6 +448,7 @@ silent no-op and nothing else changes.
 | `src/pricing.js` | LiteLLM price list → `claude_model_pricing` rows |
 | `src/sessionUsage.js` | read a run's transcript → one `claude_usage` row |
 | `src/selfUpdate.js` | fast-forward the runner's own checkout so both machines run the same code |
+| `src/secrets.js` | gitignored secrets → the peers, on the sweep's clock; `npm run sync-secrets` by hand |
 | `src/onboard.js` | connected boards → clones, `config.json` entries, the peer machine. The daemon calls it on a timer |
 | `src/scaffold.js`| one clone → plugin enabled, task folder, CLAUDE.md, dependencies |
 | `src/trust.js`   | pre-answer Claude's folder-trust dialog in `~/.claude.json` |

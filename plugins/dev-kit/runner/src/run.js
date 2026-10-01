@@ -27,6 +27,7 @@ import { machineFilter, machineOf, mine } from "./machine.js";
 import { cardIdOf, closeLoop } from "./kanban.js";
 import { onboard } from "./onboard.js";
 import { selfUpdate } from "./selfUpdate.js";
+import { syncSecrets } from "./secrets.js";
 import { trustProject } from "./trust.js";
 import { recordUsage } from "./sessionUsage.js";
 import * as state from "./state.js";
@@ -367,6 +368,7 @@ async function sweepBoards() {
     log("board sweep failed:", err.message);
     return null;
   });
+  await pushSecrets();
   if (!r) return;
   for (const e of r.landed) {
     announced.delete(e.repo);
@@ -382,6 +384,28 @@ async function sweepBoards() {
     if (!announced.has(e.repo))
       await notify("Runner ⚠ cannot onboard", `${e.repo} (board: ${e.board})\n\n${e.why}`);
     announced.add(e.repo);
+  }
+}
+
+/**
+ * Push this machine's gitignored secrets to the peers, on the sweep's clock. Only the
+ * source machine lists `peers`, so only it pushes. A board adopted on this sweep gets
+ * its `.env` on the next, once the peer has cloned it too (#47).
+ */
+const unreachable = new Set();
+
+async function pushSecrets() {
+  if (!Object.keys(cfg.peers).length) return;
+  const out = await syncSecrets({ log }).catch((err) => {
+    log("secrets sync failed:", err.message);
+    return {};
+  });
+  // Said on the edge: a peer that is switched off would otherwise log every sweep.
+  for (const [host, { error }] of Object.entries(out)) {
+    if (error && !unreachable.has(host)) log(`🔑 ${host} unreachable: ${error}`);
+    if (!error && unreachable.has(host)) log(`🔑 ${host} reachable again`);
+    if (error) unreachable.add(host);
+    else unreachable.delete(host);
   }
 }
 

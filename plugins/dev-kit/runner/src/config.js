@@ -34,6 +34,9 @@ export function loadConfig(
     // How often the daemon adopts newly connected boards. 0 turns it off and
     // `npm run onboard` goes back to being the only way in.
     onboardMinutes: file.onboardMinutes ?? 5,
+    // host → runner folder there. Only the source machine lists any, so only it
+    // pushes secrets (secrets.js).
+    peers: file.peers ?? {},
     // Closing the card is optional: without an endpoint + adminSecret the runner
     // just does the files, exactly as before.
     kanban: {

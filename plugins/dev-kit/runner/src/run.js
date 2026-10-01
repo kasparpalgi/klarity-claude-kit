@@ -26,6 +26,7 @@ import { blockedFile, listPending, pick, stemOf, todoDir } from "./queue.js";
 import { machineFilter, machineOf, mine } from "./machine.js";
 import { cardIdOf, closeLoop } from "./kanban.js";
 import { onboard } from "./onboard.js";
+import { selfUpdate } from "./selfUpdate.js";
 import { trustProject } from "./trust.js";
 import { recordUsage } from "./sessionUsage.js";
 import * as state from "./state.js";
@@ -384,6 +385,25 @@ async function sweepBoards() {
   }
 }
 
+/**
+ * Take any new runner code before picking up the next task, never during one.
+ * Exiting is the whole mechanism: the supervisor restarts us unconditionally,
+ * so the next tick runs the code that was just pulled.
+ */
+let nextUpdateMs = 0;
+
+async function updateSelf() {
+  if (Date.now() < nextUpdateMs) return;
+  nextUpdateMs = Date.now() + 10 * 60000;
+  const moved = await selfUpdate().catch((err) => {
+    log("self-update skipped:", err.message);
+    return null;
+  });
+  if (!moved) return;
+  log(`${moved} — restarting on it`);
+  process.exit(0);
+}
+
 async function tick() {
   await sweepBoards();
   const cooldown = state.cooldownUntil();
@@ -469,6 +489,7 @@ if (process.argv.includes("--check")) {
     } catch (err) {
       log("config reload failed, keeping previous config:", err.message);
     }
+    await updateSelf();
     await tick().catch((err) => log("tick failed:", err.message));
     await new Promise((r) => setTimeout(r, cfg.pollSeconds * 1000));
   }

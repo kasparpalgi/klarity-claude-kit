@@ -56,7 +56,10 @@ machine pushed:
 ```json
 {
   "codeRoot": "~/Documents/GitHub",
-  "peers": { "karel": "~/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner" }
+  "peers": {
+    "karel": "~/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner",
+    "dell": "~/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner"
+  }
 }
 ```
 

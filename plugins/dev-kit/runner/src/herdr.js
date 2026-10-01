@@ -7,12 +7,17 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
-const BIN = process.env.HERDR_BIN ?? "herdr";
 const SETTLED = ["--until", "idle", "--until", "done", "--until", "blocked"];
 const LEAVING = ["--until", "working", "--until", "idle", "--until", "done"];
 
+/**
+ * Read HERDR_BIN per call, not at import: the tests set it after importing, and
+ * a module-level read sent them to the real herdr, whose reap() closed every
+ * live `task-*` tab — killing the very agent that ran `npm test` (task 044).
+ */
 async function raw(args, timeout = 20000) {
-  const { stdout } = await exec(BIN, args, { timeout, maxBuffer: 8 << 20 });
+  const bin = process.env.HERDR_BIN ?? "herdr";
+  const { stdout } = await exec(bin, args, { timeout, maxBuffer: 8 << 20 });
   return stdout;
 }
 

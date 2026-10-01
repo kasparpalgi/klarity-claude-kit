@@ -46,6 +46,16 @@ const FAMILIES = {
     latest: "4.5",
     versions: { 4.5: "claude-haiku-4-5" },
   },
+  // Free, and not Claude: runs through aider (src/aider.js), not `claude`. Gemini
+  // 3.8 Flash takes only low/medium/high thinking, so `efforts` caps xhigh/max.
+  gemini: {
+    name: "Gemini",
+    effort: "medium",
+    latest: "3.8",
+    versions: { 3.8: "gemini/gemini-3.8-flash" },
+    efforts: ["low", "medium", "high"],
+    engine: "aider",
+  },
 };
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
@@ -56,8 +66,10 @@ const FAMILY_ORDER = ["haiku", "sonnet", "opus"];
 /**
  * One notch cheaper: drop effort first, then family. `null` once already at
  * haiku/low — that's the runner's signal to stop trying and wait for reset.
+ * Gemini is not on the Claude usage budget, so it never steps down.
  */
 export function downgrade(current) {
+  if (current.engine) return null;
   const family = Object.entries(FAMILIES).find(([, f]) =>
     Object.values(f.versions).includes(current.model),
   )?.[0];
@@ -81,8 +93,11 @@ function tier(family, version, effort) {
   const f = FAMILIES[family];
   if (!f) return null;
   const v = f.versions[version] ? version : f.latest;
-  const e = EFFORTS.includes(effort) ? effort : f.effort;
-  return { model: f.versions[v], effort: e, label: `${f.name} ${v} / ${e}` };
+  const allowed = f.efforts ?? EFFORTS;
+  let e = EFFORTS.includes(effort) ? effort : f.effort;
+  if (!allowed.includes(e)) e = allowed.at(-1);
+  const t = { model: f.versions[v], effort: e, label: `${f.name} ${v} / ${e}` };
+  return f.engine ? { ...t, engine: f.engine } : t;
 }
 
 /**
@@ -91,7 +106,7 @@ function tier(family, version, effort) {
  * latest rather than failing the run; same for an effort outside EFFORTS.
  */
 const NAMED =
-  /run with:[ \t]*(fable|opus|sonnet|haiku)[ \t]*(\d+(?:\.\d+)?)?[ \t]*(?:\/[ \t]*(\w+))?/i;
+  /run with:[ \t]*(fable|opus|sonnet|haiku|gemini)[ \t]*(\d+(?:\.\d+)?)?[ \t]*(?:\/[ \t]*(\w+))?/i;
 
 export function explicitTier(text) {
   const m = NAMED.exec(text || "");

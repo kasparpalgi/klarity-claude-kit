@@ -35,3 +35,16 @@ test("downgrade returns null once already at the cheapest tier", () => {
   const haikuLow = explicitTier("Run with: haiku / low");
   assert.equal(downgrade(haikuLow), null);
 });
+
+test("explicitTier routes Gemini 3.8 through aider", () => {
+  const t = explicitTier("Run with: Gemini 3.8 / low");
+  assert.equal(t.model, "gemini/gemini-3.8-flash");
+  assert.equal(t.engine, "aider");
+  assert.equal(t.label, "Gemini 3.8 / low");
+});
+
+test("Gemini caps effort at high and never steps down", () => {
+  const t = explicitTier("Run with: gemini / max");
+  assert.equal(t.effort, "high");
+  assert.equal(downgrade(t), null);
+});

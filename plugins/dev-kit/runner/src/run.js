@@ -10,6 +10,7 @@ import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { classify, downgrade, explicitTier } from "./classify.js";
 import { usageLimitHit } from "./usage.js";
+import { aiderArgs, aiderFailed, excludeAiderFiles } from "./aider.js";
 import { herdrUp, runInHerdr } from "./herdr.js";
 import { notify, tail } from "./notify.js";
 import { loadConfig } from "./config.js";
@@ -68,7 +69,17 @@ function shell(cmd, args, cwd) {
  * Herdr path: a visible pane on the phone, permission prompts answerable there.
  * Falls back to the original headless child whenever herdr is off or down.
  */
-async function runTask({ repoName, filename, number, repoPath, model }) {
+async function runTask({ repoName, filename, number, repoPath, dir, tier }) {
+  if (tier.engine === "aider") {
+    excludeAiderFiles(repoPath);
+    const r = await shell(
+      "aider",
+      aiderArgs(tier, `${dir}/${filename}`),
+      repoPath,
+    );
+    return aiderFailed(r.output) ? { ...r, code: r.code || 1 } : r;
+  }
+  const model = ["--model", tier.model, "--effort", tier.effort];
   // Before the pane, not at clone time: a repo added to config.json by hand, or
   // cloned by the peer, never passed through onboarding.
   if (trustProject(repoPath)) log("  trusted the folder for Claude");
@@ -170,8 +181,14 @@ async function runRepo(repoName, repoPath) {
     retriedStart = false,
     waitingOnLimit = false;
   for (;;) {
-    const model = ["--model", activeTier.model, "--effort", activeTier.effort];
-    const r = await runTask({ repoName, filename, number, repoPath, model });
+    const r = await runTask({
+      repoName,
+      filename,
+      number,
+      repoPath,
+      dir,
+      tier: activeTier,
+    });
     ({ code, output } = r);
     started = r.started !== false;
     // A pane that never registered an agent means the task never ran: herdr
@@ -184,7 +201,8 @@ async function runRepo(repoName, repoPath) {
       log(`  ${filename} — no agent in the pane, retrying once`);
       continue;
     }
-    const limit = usageLimitHit(output);
+    // Gemini via aider is not on the Claude budget; its output is not the CLI's.
+    const limit = activeTier.engine ? null : usageLimitHit(output);
     if (!limit) break;
     const cheaper = downgrade(activeTier);
     if (!cheaper) {
@@ -236,7 +254,9 @@ async function runRepo(repoName, repoPath) {
     const parked = await parkDirty(repoPath, filename);
     // "exit 1" over a two-line herdr error reads as "the agent failed"; it did
     // not run at all, which is a different thing to go and look at.
-    const why = started ? `exit ${code}` : "the agent never started in its pane";
+    const why = started
+      ? `exit ${code}`
+      : "the agent never started in its pane";
     log(`✘ ${filename} ${why}${parked ? " — parked leftover work" : ""}`);
     await notify(
       "Runner ✘",
@@ -361,7 +381,8 @@ let nextSweepMs = 0;
 const announced = new Set();
 
 async function sweepBoards() {
-  if (!cfg.onboardMinutes || !cfg.kanban.endpoint || !cfg.kanban.adminSecret) return;
+  if (!cfg.onboardMinutes || !cfg.kanban.endpoint || !cfg.kanban.adminSecret)
+    return;
   if (Date.now() < nextSweepMs) return;
   nextSweepMs = Date.now() + cfg.onboardMinutes * 60000;
   const r = await onboard({ peers: false, log }).catch((err) => {
@@ -382,7 +403,10 @@ async function sweepBoards() {
   // the same failure every sweep, forever.
   for (const e of r.failed) {
     if (!announced.has(e.repo))
-      await notify("Runner ⚠ cannot onboard", `${e.repo} (board: ${e.board})\n\n${e.why}`);
+      await notify(
+        "Runner ⚠ cannot onboard",
+        `${e.repo} (board: ${e.board})\n\n${e.why}`,
+      );
     announced.add(e.repo);
   }
 }
@@ -402,7 +426,8 @@ async function pushSecrets() {
   });
   // Said on the edge: a peer that is switched off would otherwise log every sweep.
   for (const [host, { error }] of Object.entries(out)) {
-    if (error && !unreachable.has(host)) log(`🔑 ${host} unreachable: ${error}`);
+    if (error && !unreachable.has(host))
+      log(`🔑 ${host} unreachable: ${error}`);
     if (!error && unreachable.has(host)) log(`🔑 ${host} reachable again`);
     if (error) unreachable.add(host);
     else unreachable.delete(host);
@@ -462,7 +487,11 @@ async function check() {
   const { blocked } = state.snapshot();
   if (cfg.onboardMinutes && cfg.kanban.adminSecret) {
     try {
-      const { boards, todo } = await onboard({ dryRun: true, peers: false, log: () => {} });
+      const { boards, todo } = await onboard({
+        dryRun: true,
+        peers: false,
+        log: () => {},
+      });
       const waiting = todo.map((t) => `${t.repo} → ${t.dir}`).join(", ");
       log(`boards: ${boards.length} connected; ${waiting || "all onboarded"}`);
     } catch (err) {

@@ -375,6 +375,7 @@ Everything lives in one table, `FAMILIES` in `src/classify.js`:
 | `opus`   | 4.6, 4.8, 5        | 5      | high           |
 | `sonnet` | 4.6, 5             | 5      | medium         |
 | `haiku`  | 4.5                | 4.5    | low            |
+| `gemini` | 3.8 (Flash, free)  | 3.8    | medium — only low/medium/high |
 
 Add a version by putting its model id in that family's `versions`.
 
@@ -384,6 +385,18 @@ auto-chosen — it bills usage credits, so it has to be asked for by name.
 
 Task-014 writes the line from the card's model/effort fields, so the tier is normally
 chosen from the board rather than typed.
+
+### Gemini — the free tier, via aider
+
+`Run with: Gemini 3.8 / low` runs `aider --model gemini/gemini-3.8-flash
+--reasoning-effort low` headless in the repo, not Claude (`src/aider.js`). aider has no
+`/todo`, so it gets the task file read-only, edits and auto-commits; the runner's
+autoFinish writes Results and the `-DONE` rename. Effort above `high` is capped there.
+aider exits 0 even when the API rejected every call, so a litellm error in its output
+counts as a failed run. Meant for simple tasks; it never steps down on usage limits.
+
+Per machine, once: `uv tool install aider-chat` and `GEMINI_API_KEY=…` (free key from
+aistudio.google.com) in `~/.config/kanban-runner.env`.
 
 ### Usage limits
 

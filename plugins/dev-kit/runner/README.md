@@ -252,6 +252,14 @@ Logs are gitignored: the first run in a repo commits `*.log` to the task folder'
 **One task per tick.** The loop returns after the first task it runs, so repos queue
 naturally.
 
+**The runner updates itself.** Every ten minutes, between tasks, it fast-forwards its
+own checkout; if that brought new commits it exits, and the supervisor (systemd
+`Restart=always`, launchd `KeepAlive`) starts it again on the new code. Without this a
+fix pushed from one machine simply never reaches the other — the daemon keeps ticking,
+looking healthy, running last week's files, and a reboot does not help because it
+restarts the same stale checkout. A dirty tree is left alone: that is someone working
+in the repo, not a stale box.
+
 ## Where the logs are
 
 | Log | What is in it |
@@ -300,7 +308,8 @@ The task file names the owner, right under the tier line:
 Each runner sets its own id in `config.json` and takes only the tasks addressed to it:
 
 ```json
-{ "machine": "karel" }                        // Karel, the Ubuntu box
+{ "machine": "karel" }                        // Karel, an Ubuntu box
+{ "machine": "dell" }                         // Dell (servo), the other Ubuntu box
 { "machine": "mac", "machineDefault": true }  // this Mac
 ```
 
@@ -414,6 +423,7 @@ silent no-op and nothing else changes.
 | `src/classify.js`| model + effort tier for a task file |
 | `src/pricing.js` | LiteLLM price list → `claude_model_pricing` rows |
 | `src/sessionUsage.js` | read a run's transcript → one `claude_usage` row |
+| `src/selfUpdate.js` | fast-forward the runner's own checkout so both machines run the same code |
 | `src/onboard.js` | connected boards → clones, `config.json` entries, the peer machine. The daemon calls it on a timer |
 | `src/scaffold.js`| one clone → plugin enabled, task folder, CLAUDE.md, dependencies |
 | `src/trust.js`   | pre-answer Claude's folder-trust dialog in `~/.claude.json` |

@@ -46,13 +46,20 @@ export const stackOf = (dir) =>
   };
 
 /** The plugin is enabled per repo, next to whatever settings it already has. */
-export function mergeSettings(current) {
+export function mergeSettings(current, { seo = false } = {}) {
   const next = { ...current };
   next.extraKnownMarketplaces = {
     klarity: { source: { source: "github", repo: "kasparpalgi/klarity-claude-kit" } },
     ...(next.extraKnownMarketplaces ?? {}),
   };
   next.enabledPlugins = { ...(next.enabledPlugins ?? {}), "dev-kit@klarity": true };
+  // Opt-in: claude-seo is 26 skills, so only landing / marketing sites load it.
+  if (seo) {
+    next.extraKnownMarketplaces["agricidaniel-claude-seo"] ??= {
+      source: { source: "github", repo: "AgriciDaniel/claude-seo" },
+    };
+    next.enabledPlugins["claude-seo@agricidaniel-claude-seo"] = true;
+  }
   return next;
 }
 
@@ -98,7 +105,7 @@ const writeIfAbsent = (path, body, steps, label) => {
  * meets. Idempotent: the second machine pulls what the first pushed and writes
  * nothing. Returns what it did and what a human still has to look at.
  */
-export async function scaffold(repo, dir, { dryRun = false, install = true } = {}) {
+export async function scaffold(repo, dir, { dryRun = false, install = true, seo = false } = {}) {
   const steps = [];
   const warnings = [];
   const fresh = !existsSync(dir);
@@ -130,11 +137,11 @@ export async function scaffold(repo, dir, { dryRun = false, install = true } = {
   const stack = stackOf(dir);
   const settings = join(dir, ".claude", "settings.json");
   const before = existsSync(settings) ? readFileSync(settings, "utf8") : "";
-  const merged = JSON.stringify(mergeSettings(before ? JSON.parse(before) : {}), null, "\t") + "\n";
+  const merged = JSON.stringify(mergeSettings(before ? JSON.parse(before) : {}, { seo }), null, "\t") + "\n";
   if (merged !== before) {
     mkdirSync(dirname(settings), { recursive: true });
     writeFileSync(settings, merged);
-    steps.push("enabled dev-kit@klarity");
+    steps.push(seo ? "enabled dev-kit@klarity + claude-seo" : "enabled dev-kit@klarity");
   }
   if (!existsSync(join(dir, ".claude", "todo")))
     writeIfAbsent(join(dir, "doc", "todo", ".gitkeep"), "", steps, "created doc/todo/");

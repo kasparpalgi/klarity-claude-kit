@@ -36,8 +36,10 @@ test("missing() leaves a repo the config already places by hand alone", () => {
     { name: "Work", github: '{"full_name":"kasparpalgi/job"}', client_id: "c1" },
   ];
   assert.deepEqual(missing(repos, boards), [
-    { repo: "kasparpalgi/job", board: "Work", hasClient: true },
+    { repo: "kasparpalgi/job", board: "Work", hasClient: true, seo: false },
   ]);
+  const seo = [{ name: "L", github: '{"full_name":"x/l","seo":true}', client_id: null }];
+  assert.equal(missing({}, seo)[0].seo, true);
 });
 
 test("the config's own spelling of a repo counts, whatever its case", () => {
@@ -59,6 +61,14 @@ test("mergeSettings enables the plugin without dropping what is there", () => {
   assert.equal(next.enabledPlugins["other@x"], true);
   assert.deepEqual(next.permissions, { allow: ["Bash"] });
   assert.equal(next.extraKnownMarketplaces.klarity.source.repo, "kasparpalgi/klarity-claude-kit");
+});
+
+test("mergeSettings enables claude-seo only when asked", () => {
+  assert.equal(mergeSettings({}).enabledPlugins["claude-seo@agricidaniel-claude-seo"], undefined);
+  const next = mergeSettings({}, { seo: true });
+  assert.equal(next.enabledPlugins["claude-seo@agricidaniel-claude-seo"], true);
+  assert.equal(next.extraKnownMarketplaces["agricidaniel-claude-seo"].source.repo, "AgriciDaniel/claude-seo");
+  assert.deepEqual(mergeSettings(next, { seo: true }), next);
 });
 
 test("mergeSettings on an already-onboarded repo is a no-op", () => {

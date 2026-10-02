@@ -289,6 +289,7 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 | `machineDefault` | this machine also takes tasks with no `> Machine:` line (default false) |
 | `codeRoot`       | where onboarding looks for clones and puts new ones (default `~/Documents/GitHub`) |
 | `onboardMinutes` | how often the daemon adopts newly connected boards (default 5; `0` turns it off) |
+| `seo`            | repos (`"owner/repo"`) that also get the claude-seo plugin — landing / marketing sites only. A board gets it too with `"seo": true` in its `github` JSON. For an already-onboarded repo, add it here and run `npm run onboard -- --all` |
 | `peers`          | host → this runner's folder on it; `npm run onboard` repeats itself there over ssh, and the sweep pushes secrets there. Omit on the peer |
 
 ## Secrets on the peers

@@ -38,6 +38,15 @@ const BOARDS = `query { boards(
   order_by: {name: asc}
 ) { name github client_id } }`;
 
+/** A board opts its repo into claude-seo with `"seo": true` in its github JSON. */
+export function seoOf(github) {
+  try {
+    return (typeof github === "string" ? JSON.parse(github) : github)?.seo === true;
+  } catch {
+    return false;
+  }
+}
+
 /** `{"owner":"x","repo":"y"}` → `x/y`. Null for anything that is not a repo. */
 export function repoOf(github) {
   try {
@@ -64,7 +73,7 @@ export function missing(repos, boards) {
     const repo = repoOf(b.github);
     if (!repo || seen.has(repo.toLowerCase())) continue;
     seen.add(repo.toLowerCase());
-    out.push({ repo, board: b.name, hasClient: Boolean(b.client_id) });
+    out.push({ repo, board: b.name, hasClient: Boolean(b.client_id), seo: seoOf(b.github) });
   }
   return out;
 }
@@ -187,6 +196,8 @@ export async function onboard({
     const r = await scaffold(entry.repo, expand(entry.dir), {
       dryRun,
       install,
+      // Either the board says so, or the repo is listed in config.json's `seo`.
+      seo: entry.seo || (file.seo ?? []).some((r) => r.toLowerCase() === entry.repo.toLowerCase()),
     });
     for (const s of r.steps) log(`  ✔ ${s}`);
     for (const w of r.warnings) log(`  ⚠ ${w}`);

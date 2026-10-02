@@ -174,6 +174,65 @@ export async function closeLoop(
   return out;
 }
 
+const CARDS = `query C($ids: [uuid!]!) {
+  todos(where: {id: {_in: $ids}}) { id task_file_path list { name } }
+}`;
+
+/** Card id → its -DONE/-BLOCKED file, for every finished task file in `full`. */
+export function finishedCards(full) {
+  const byCard = new Map();
+  for (const n of readdirSync(full)) {
+    if (!/-(DONE|BLOCKED)\.md$/i.test(n)) continue;
+    const id = cardIdOf(readFileSync(join(full, n), "utf8"));
+    if (id) byCard.set(id, n);
+  }
+  return byCard;
+}
+
+/**
+ * Cards in TODO or Doing that still point at the -TODO file of a finished task.
+ * closeLoop repoints a card at its -DONE file, so a card a human moved back to
+ * TODO for a redo points there and is left alone; so is anything in another list.
+ */
+export function stuckCards(todos, byCard, lists) {
+  const open = new Set([lists.todo, lists.doing].map((l) => l.toLowerCase()));
+  return todos
+    .filter(
+      (t) =>
+        byCard.has(t.id) &&
+        open.has(t.list?.name?.toLowerCase()) &&
+        /-TODO\.md$/i.test(t.task_file_path ?? "") &&
+        stemOf(basename(t.task_file_path)) === stemOf(byCard.get(t.id)),
+    )
+    .map((t) => byCard.get(t.id));
+}
+
+/**
+ * closeLoop only runs at the end of the runner's own run, so a task finished any
+ * other way kept its card in TODO for good: by hand after a park (tekdok 027), on
+ * a run a runner restart orphaned (tekdok 034), or on a peer whose close step never
+ * ran (tekdok 035). Close those from the file, whoever renamed it.
+ */
+export async function reconcileCards(kanban, { repoName, repoPath, dir }) {
+  if (!kanban?.endpoint || !kanban?.adminSecret) return [];
+  const byCard = finishedCards(join(repoPath, dir));
+  if (!byCard.size) return [];
+  const { todos } = await gql(kanban, CARDS, { ids: [...byCard.keys()] });
+  const out = [];
+  for (const name of stuckCards(todos, byCard, kanban.lists)) {
+    const lines = await closeLoop(kanban, {
+      repoName,
+      repoPath,
+      dir,
+      stem: stemOf(name),
+      added: [],
+      blocked: /-BLOCKED\.md$/i.test(name),
+    });
+    out.push(`${name}: ${lines.join("; ")}`);
+  }
+  return out;
+}
+
 /** A new NNN-*.md with no card of its own is a follow-up the agent split out. */
 async function fileFollowUps(kanban, { board, listId, full, dir, added }) {
   const backlog = listId(kanban.lists.backlog);

@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cardIdOf, doneFile, resultsOf, titleOf } from "../src/kanban.js";
+import {
+  cardIdOf,
+  doneFile,
+  finishedCards,
+  resultsOf,
+  stuckCards,
+  titleOf,
+} from "../src/kanban.js";
 
 const DONE = `> Run with: Opus 5 / high
 
@@ -102,4 +109,30 @@ test("reads the -DONE file of this task, not of a namesake", () => {
   assert.equal(doneFile(dir, "019-errors"), "019-errors-DONE.md");
   assert.equal(doneFile(dir, "019-task012Fix"), "019-task012Fix-BLOCKED.md");
   assert.equal(doneFile(dir, "019-neverRan"), undefined);
+});
+
+test("a finished task whose card still points at its -TODO is stuck; a redo or a parked card is not", () => {
+  const dir = mkdtempSync(join(tmpdir(), "todo-"));
+  const card = (id) => `# T\n\n_From Kanban card \`${id}\`._\n`;
+  const [a, b, c, d] = ["a", "b", "c", "d"].map(
+    (x) => x.repeat(8) + "-1111-2222-3333-444455556666",
+  );
+  writeFileSync(join(dir, "034-manageGigs-DONE.md"), card(a));
+  writeFileSync(join(dir, "012-apple-DONE.md"), card(b));
+  writeFileSync(join(dir, "019-errors-DONE.md"), card(c));
+  writeFileSync(join(dir, "035-sessions-TODO.md"), card(d));
+  writeFileSync(join(dir, "036-handWritten-DONE.md"), "# no card");
+
+  const byCard = finishedCards(dir);
+  assert.equal(byCard.size, 3);
+  const todo = { name: "Todo" };
+  const todos = [
+    { id: a, list: todo, task_file_path: "doc/todo/034-manageGigs-TODO.md" },
+    { id: b, list: { name: "Ready" }, task_file_path: "doc/todo/012-apple-TODO.md" },
+    { id: c, list: todo, task_file_path: "doc/todo/019-errors-DONE.md" },
+    { id: d, list: todo, task_file_path: "doc/todo/035-sessions-TODO.md" },
+  ];
+  assert.deepEqual(stuckCards(todos, byCard, { todo: "TODO", doing: "Doing" }), [
+    "034-manageGigs-DONE.md",
+  ]);
 });

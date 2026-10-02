@@ -25,7 +25,7 @@ import {
 } from "./repo.js";
 import { blockedFile, listPending, pick, stemOf, todoDir } from "./queue.js";
 import { machineFilter, machineOf, mine } from "./machine.js";
-import { cardIdOf, closeLoop } from "./kanban.js";
+import { cardIdOf, closeLoop, reconcileCards } from "./kanban.js";
 import { onboard } from "./onboard.js";
 import { selfUpdate } from "./selfUpdate.js";
 import { syncSecrets } from "./secrets.js";
@@ -109,6 +109,21 @@ async function runTask({ repoName, filename, number, repoPath, dir, tier }) {
   return shell("claude", args, repoPath);
 }
 
+/** HEAD each repo's cards were last reconciled at: once per new commit, not per tick. */
+const reconciledAt = new Map();
+
+async function reconcile(repoName, repoPath, dir) {
+  const head = (await git(["rev-parse", "HEAD"], repoPath)).stdout.trim();
+  if (reconciledAt.get(repoName) === head) return;
+  reconciledAt.set(repoName, head);
+  const lines = await reconcileCards(cfg.kanban, {
+    repoName,
+    repoPath,
+    dir,
+  }).catch((err) => [`kanban: ${err.message}`]);
+  for (const line of lines) log(`  ${repoName} ↺ ${line}`);
+}
+
 async function runRepo(repoName, repoPath) {
   const dir = todoDir(repoPath);
   const {
@@ -131,6 +146,7 @@ async function runRepo(repoName, repoPath) {
   for (const n of notes) log(`  ${repoName}: ${n}`);
   if (state.clearBlocked(repoName))
     await notify("Runner ▶ unblocked", `${repoName} is running again.`);
+  await reconcile(repoName, repoPath, dir);
 
   const pending = listPending(repoPath, dir);
   state.pruneTries(

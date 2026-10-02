@@ -29,6 +29,13 @@ push. Other projects pick it up on `/plugin` update — no per-repo copies to ke
 | `/verify`          | by you    | Run the project's verification chain                 |
 | `/cross-review`    | by you    | Pipe diff to a second-vendor AI for independent bugs |
 | `research-first`   | by Claude | Look up docs before coding against an unfamiliar API |
+| `debug`            | by Claude | Root cause before fix (from superpowers)             |
+
+## MCP servers
+
+`.mcp.json` ships the hosted [Exa](https://exa.ai) MCP (`web_search_exa`, `web_fetch_exa`)
+to every repo that has dev-kit enabled. Keyless and free (rate-limited); run `/mcp` → exa →
+authenticate to use your own Exa plan instead.
 
 ## Parallel worktrees (tmux layout)
 

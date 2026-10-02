@@ -13,7 +13,7 @@ const ok = (r) => `{"result":${r}}`;
 const fail = (code) => `echo '{"error":{"code":"${code}"}}' >&2; exit 1`;
 
 /** A herdr whose `agent wait`/`agent start` can be told to fail. */
-function fakeHerdr(cases = "") {
+function fakeHerdr(cases = "", status = "idle") {
   const bin = join(mkdtempSync(join(tmpdir(), "herdr-")), "herdr");
   writeFileSync(
     bin,
@@ -24,8 +24,8 @@ ${cases}
 "workspace list") echo '${ok('{"workspaces":[{"workspace_id":"w1"}]}')}' ;;
 "tab create") echo '${ok('{"root_pane":{"pane_id":"p1"}}')}' ;;
 "agent start") echo '${ok("{}")}' ;;
-"agent wait") echo '${ok('{"agent":{"agent_status":"idle"}}')}' ;;
-"agent prompt") echo '${ok('{"agent":{"agent_status":"idle"}}')}' ;;
+"agent wait") echo '${ok(`{"agent":{"agent_status":"${status}"}}`)}' ;;
+"agent prompt") echo '${ok(`{"agent":{"agent_status":"${status}"}}`)}' ;;
 "agent read") echo "transcript" ;;
 *) exit 1 ;;
 esac
@@ -48,11 +48,11 @@ const run = (extra = {}) =>
   });
 
 /** A pane whose footer shows a background monitor for the first `n` reads. */
-function backgroundFor(n) {
+function backgroundFor(n, status) {
   const count = join(mkdtempSync(join(tmpdir(), "reads-")), "n");
   writeFileSync(count, "0");
   fakeHerdr(`"agent read") c=$(($(cat ${count}) + 1)); echo $c > ${count}
-  if [ $c -le ${n} ]; then echo "done 4:32 PM · 2 shells, 1 monitor still running"; else echo "idle"; fi ;;`);
+  if [ $c -le ${n} ]; then echo "done 4:32 PM · 2 shells, 1 monitor still running"; else echo "idle"; fi ;;`, status);
   return () => Number(readFileSync(count, "utf8"));
 }
 
@@ -81,6 +81,13 @@ test("idle on a background monitor is waited out, not finished", async () => {
   const r = await run();
   assert.equal(r.code, 0);
   // two busy footers, one clear one, then the transcript for the log
+  assert.equal(reads(), 4);
+});
+
+test("an unseen pane reports `done`, not `idle`, and is waited out the same", async () => {
+  const reads = backgroundFor(2, "done");
+  const r = await run();
+  assert.equal(r.code, 0);
   assert.equal(reads(), 4);
 });
 

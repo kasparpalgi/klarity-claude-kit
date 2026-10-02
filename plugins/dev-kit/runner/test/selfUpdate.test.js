@@ -59,3 +59,11 @@ test("leaves a dirty tree alone — someone is working in it", async () => {
   assert.equal(await selfUpdate(clone), null);
   assert.equal(git(clone, "show", "-s", "--format=%s"), "first");
 });
+
+test("restarts on a commit made in the runner's own checkout, not only on a pull", async () => {
+  const { clone } = pair();
+  assert.equal(await selfUpdate(clone), null);
+  writeFileSync(join(clone, "model.js"), "opus 5.5\n");
+  git(clone, "commit", "-qam", "fix made on this machine");
+  assert.match(await selfUpdate(clone), /fix made on this machine/);
+});

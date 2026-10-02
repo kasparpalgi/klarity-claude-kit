@@ -96,6 +96,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * job's exit wakes it. Treating it as done parked tekdok 024 mid-E2E, twice.
  */
 export const BACKGROUND = /\b\d+ (?:shells?|monitors?)\b/;
+/**
+ * Both mean "ready for input" — herdr says `done` until a client has seen the
+ * pane, and the runner never focuses it. Checking `idle` alone parked tekdok
+ * 027 mid-E2E on Karel, a run after the BACKGROUND fix. (boilerplate#48)
+ */
+const READY = new Set(["idle", "done"]);
 const busy = async (name) =>
   BACKGROUND.test(
     (await readPane(name)).trim().split("\n").slice(-4).join("\n"),
@@ -189,7 +195,7 @@ export async function runInHerdr(opts) {
     let agent = await clear((await promptAgent(name, prompt, taskMs)).agent);
     // Idle on a background job and not done yet: wait for the job to wake it.
     while (
-      agent.agent_status === "idle" &&
+      READY.has(agent.agent_status) &&
       Date.now() < end &&
       !done?.() &&
       (await busy(name))

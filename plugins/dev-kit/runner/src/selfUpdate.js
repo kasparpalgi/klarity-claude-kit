@@ -22,6 +22,14 @@ const NO_PROMPT = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
 const RUNNER_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /**
+ * The HEAD each checkout was first seen at, so the process is running that
+ * code. Comparing only around the pull missed a fix committed straight into
+ * the runner's own checkout — Karel kept running the code it had parked tekdok
+ * 027 with (boilerplate#48).
+ */
+const booted = new Map();
+
+/**
  * Fast-forward the runner's own repo. Returns a one-line summary when new
  * commits landed — the caller then exits, and the supervisor (systemd
  * `Restart=always`, launchd `KeepAlive`) brings us back on the new code — or
@@ -37,9 +45,9 @@ export async function selfUpdate(cwd = RUNNER_DIR) {
       await exec("git", args, { cwd, timeout: 60000, env: NO_PROMPT })
     ).stdout.trim();
   if (await git("status", "--porcelain")) return null;
-  const before = await git("rev-parse", "HEAD");
+  if (!booted.has(cwd)) booted.set(cwd, await git("rev-parse", "HEAD"));
   await git("pull", "--ff-only");
   const after = await git("rev-parse", "HEAD");
-  if (after === before) return null;
+  if (after === booted.get(cwd)) return null;
   return `↻ runner code updated to ${after.slice(0, 7)} — ${await git("log", "-1", "--format=%s")}`;
 }

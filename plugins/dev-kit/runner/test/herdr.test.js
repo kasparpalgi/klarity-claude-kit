@@ -3,7 +3,7 @@
  * the one bit run.js now branches on: did an agent ever appear in the pane?
  */
 import { strict as assert } from "node:assert";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -35,7 +35,7 @@ esac
   process.env.HERDR_BIN = bin;
 }
 
-const run = () =>
+const run = (extra = {}) =>
   runInHerdr({
     name: "task-001",
     cwd: "/tmp",
@@ -43,7 +43,18 @@ const run = () =>
     prompt: "/todo 001",
     taskMs: 5000,
     blockedMs: 1000,
+    pollMs: 10,
+    ...extra,
   });
+
+/** A pane whose footer shows a background monitor for the first `n` reads. */
+function backgroundFor(n) {
+  const count = join(mkdtempSync(join(tmpdir(), "reads-")), "n");
+  writeFileSync(count, "0");
+  fakeHerdr(`"agent read") c=$(($(cat ${count}) + 1)); echo $c > ${count}
+  if [ $c -le ${n} ]; then echo "done 4:32 PM · 2 shells, 1 monitor still running"; else echo "idle"; fi ;;`);
+  return () => Number(readFileSync(count, "utf8"));
+}
 
 test("a run that reaches an idle agent reports it started", async () => {
   fakeHerdr();
@@ -63,4 +74,18 @@ test("a pane whose shell is not up yet is not a failed run either", async () => 
   fakeHerdr(`"agent start") ${fail("agent_pane_busy")} ;;`);
   const r = await run();
   assert.equal(r.started, false);
+});
+
+test("idle on a background monitor is waited out, not finished", async () => {
+  const reads = backgroundFor(2);
+  const r = await run();
+  assert.equal(r.code, 0);
+  // two busy footers, one clear one, then the transcript for the log
+  assert.equal(reads(), 4);
+});
+
+test("a done task is not held open by a lingering background shell", async () => {
+  const reads = backgroundFor(99);
+  await run({ done: () => true });
+  assert.equal(reads(), 1);
 });

@@ -90,6 +90,17 @@ const readPane = async (name) => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Claude ends its turn to wait on a background job — the footer then reads
+ * "2 shells, 1 monitor" — and herdr calls that idle. It is not finished: the
+ * job's exit wakes it. Treating it as done parked tekdok 024 mid-E2E, twice.
+ */
+export const BACKGROUND = /\b\d+ (?:shells?|monitors?)\b/;
+const busy = async (name) =>
+  BACKGROUND.test(
+    (await readPane(name)).trim().split("\n").slice(-4).join("\n"),
+  );
+
 const waitFor = (name, until, ms) =>
   hx(["agent", "wait", name, ...until, "--timeout", String(ms)], ms + 15000);
 
@@ -123,7 +134,9 @@ async function promptAgent(name, prompt, taskMs) {
  * within blockedMs of total wall clock.
  */
 export async function runInHerdr(opts) {
-  const { name, cwd, args, prompt, taskMs, blockedMs, onBlocked } = opts;
+  const { name, cwd, args, prompt, taskMs, blockedMs, onBlocked, done } = opts;
+  const pollMs = opts.pollMs ?? 30000;
+  const end = Date.now() + taskMs;
   // False until a wait actually hands us an agent. `agent start` resolving is
   // not proof: it answered `agent_not_ready` for a pane that never registered
   // one at all, and the next call said `agent_not_found` (task-032).
@@ -173,8 +186,21 @@ export async function runInHerdr(opts) {
     started = true;
     await clear(first.agent);
     // A still-blocked agent makes promptAgent fail with agent_blocked, below.
-    const { agent } = await promptAgent(name, prompt, taskMs);
-    const stuck = (await clear(agent)).agent_status === "blocked";
+    let agent = await clear((await promptAgent(name, prompt, taskMs)).agent);
+    // Idle on a background job and not done yet: wait for the job to wake it.
+    while (
+      agent.agent_status === "idle" &&
+      Date.now() < end &&
+      !done?.() &&
+      (await busy(name))
+    ) {
+      // Poll, not `--until working`: a quick wake-up can finish in between.
+      await sleep(pollMs);
+      agent = await clear(
+        (await waitFor(name, SETTLED, end - Date.now())).agent,
+      );
+    }
+    const stuck = agent.agent_status === "blocked";
     return { code: stuck ? 1 : 0, output: await readPane(name), started };
   } catch (err) {
     // A herdr timeout or CLI error is a stuck run, not a crash: keep the log.

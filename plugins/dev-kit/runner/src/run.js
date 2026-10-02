@@ -92,6 +92,7 @@ async function runTask({ repoName, filename, number, repoPath, dir, tier }) {
         ? [...model, "--dangerously-skip-permissions"]
         : [...model, "--permission-mode", "acceptEdits"],
       taskMs: cfg.taskMinutes * 60000,
+      done: () => !listPending(repoPath, dir).some((p) => p.name === filename),
       blockedMs: cfg.blockedMinutes * 60000,
       onBlocked: (pane) =>
         notify(
@@ -244,14 +245,23 @@ async function runRepo(repoName, repoPath) {
   // The run almost certainly touched the task file; adopt that mtime as ours so
   // only a *human* edit reads as "try this again".
   const taskFile = join(repoPath, dir, filename);
-  if (existsSync(taskFile))
+  const adopt = () =>
+    existsSync(taskFile) &&
     state.seen(repoName, taskStem, statSync(taskFile).mtimeMs);
+  adopt();
+  // The stash rewrites the task file too; adopt that mtime as well, or it reads
+  // as a human retry and the count resets — tekdok 024 ran "attempt 1" 3 times.
+  const park = async () => {
+    const parked = await parkDirty(repoPath, filename);
+    adopt();
+    return parked;
+  };
 
   if (waitingOnLimit) return true;
 
   if (code !== 0) {
     // Clear our own leftover dirt so a stuck run can't block the repo forever.
-    const parked = await parkDirty(repoPath, filename);
+    const parked = await park();
     // "exit 1" over a two-line herdr error reads as "the agent failed"; it did
     // not run at all, which is a different thing to go and look at.
     const why = started
@@ -292,7 +302,7 @@ async function runRepo(repoName, repoPath) {
     // A dirty finish is real work the agent never committed. preflight blocks on
     // any dirt, so left as-is it wedges this task and every card queued after it.
     // We cannot guess what belongs in a commit, so park it (recoverable) and warn.
-    const parked = await parkDirty(repoPath, filename);
+    const parked = await park();
     const why = [
       renamed ? null : `${filename} was never renamed to -DONE`,
       parked

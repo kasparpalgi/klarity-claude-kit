@@ -7,7 +7,7 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { runInHerdr } from "../src/herdr.js";
+import { paneLive, runInHerdr } from "../src/herdr.js";
 
 const ok = (r) => `{"result":${r}}`;
 const fail = (code) => `echo '{"error":{"code":"${code}"}}' >&2; exit 1`;
@@ -95,4 +95,22 @@ test("a done task is not held open by a lingering background shell", async () =>
   const reads = backgroundFor(99);
   await run({ done: () => true });
   assert.equal(reads(), 1);
+});
+
+test("reap spares a live task pane and closes a finished one", async () => {
+  const closed = join(mkdtempSync(join(tmpdir(), "closed-")), "log");
+  writeFileSync(closed, "");
+  const tabs = JSON.stringify({
+    tabs: [
+      { label: "task-034", tab_id: "live", agent_status: "working" },
+      { label: "task-033", tab_id: "asking", agent_status: "blocked" },
+      { label: "task-032", tab_id: "old", agent_status: "done" },
+    ],
+  });
+  fakeHerdr(`"tab list") echo '${ok(tabs)}' ;;
+"tab close") echo "$3" >> ${closed}; echo '${ok("{}")}' ;;`);
+  await run();
+  assert.deepEqual(readFileSync(closed, "utf8").trim().split("\n"), ["old"]);
+  assert.equal(await paneLive("task-034"), true);
+  assert.equal(await paneLive("task-032"), false);
 });

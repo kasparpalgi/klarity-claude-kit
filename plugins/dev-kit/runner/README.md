@@ -283,7 +283,7 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 | `repos`          | `"owner/repo"` → local clone path; `~/` is expanded at runtime  |
 | `useHerdr`       | run Claude in a herdr pane, visible on the phone (default false) |
 | `unattended`     | on the herdr path, skip permissions instead of asking (true here) |
-| `taskMinutes`    | cap on one `/todo` run (default 45)                             |
+| `taskMinutes`    | cap on one `/todo` run (default 240) — only a still-`working` agent ever reaches it, so it guards against a hung agent, not a long task. At 45, Opus/high tasks with an E2E run were parked mid-work and re-run (tekdok 034, kanban 206) |
 | `blockedMinutes` | how long to wait for a human to answer a prompt (default 30)    |
 | `machine`        | this computer's id — a string or a list of spellings it answers to. Unset means it is the only runner and takes every task |
 | `machineDefault` | this machine also takes tasks with no `> Machine:` line (default false) |

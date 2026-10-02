@@ -24,7 +24,7 @@ export function loadConfig(
     useHerdr: file.useHerdr ?? false,
     // No phone watching: skip permissions instead of stalling on a prompt.
     unattended: file.unattended ?? false,
-    taskMinutes: file.taskMinutes ?? 45,
+    taskMinutes: file.taskMinutes ?? 240,
     blockedMinutes: file.blockedMinutes ?? 30,
     // This computer's id. Unset means "the only machine" — take every task.
     // Set, and a task file's `> Machine:` line has to name it (see machine.js).

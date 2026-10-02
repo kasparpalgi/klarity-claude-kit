@@ -35,20 +35,37 @@ export async function herdrUp() {
   }
 }
 
+/** An agent mid-turn, or waiting on a human. Its pane is somebody's work. */
+const LIVE = new Set(["working", "blocked"]);
+
 /**
  * A finished run now leaves its pane open at the shell prompt so a human can
  * type a follow-up and close it themselves. So before each run we close any
  * leftover `task-*` tab from a previous run. Key off the tab *label*, not the
  * agent list: a finished agent drops out of `agent list`, but its tab lingers —
- * only `tab list` still sees it. Only one task runs at a time (`tick()` is
- * awaited, launchd keeps one daemon), so reaping a *live* pane takes a second
- * runner: don't `--once` by hand while the daemon holds a task.
+ * only `tab list` still sees it. A *live* tab is never closed: a runner that
+ * restarted mid-run (a self-update, or by hand) used to reap the agent it had
+ * just started, and its next pick re-ran the same task from a stash.
  */
 async function reap() {
   const { tabs } = await hx(["tab", "list"]);
   for (const t of tabs) {
-    if (t.label?.startsWith("task-"))
+    if (t.label?.startsWith("task-") && !LIVE.has(t.agent_status))
       await hx(["tab", "close", t.tab_id]).catch(() => {});
+  }
+}
+
+/**
+ * True while a `name` tab is still working or blocked — a run this process did
+ * not start (it restarted since) or no longer waits on (taskMinutes ran out).
+ * Picking that task again would start a second agent on the same files.
+ */
+export async function paneLive(name) {
+  try {
+    const { tabs } = await hx(["tab", "list"], 5000);
+    return tabs.some((t) => t.label === name && LIVE.has(t.agent_status));
+  } catch {
+    return false;
   }
 }
 
@@ -107,8 +124,11 @@ const busy = async (name) =>
     (await readPane(name)).trim().split("\n").slice(-4).join("\n"),
   );
 
-const waitFor = (name, until, ms) =>
-  hx(["agent", "wait", name, ...until, "--timeout", String(ms)], ms + 15000);
+/** Clamped: a deadline that passed mid-poll gave herdr a negative timeout (kanban 206). */
+const waitFor = (name, until, ms) => {
+  const t = Math.max(1000, Math.round(ms));
+  return hx(["agent", "wait", name, ...until, "--timeout", String(t)], t + 15000);
+};
 
 /**
  * `agent_prompt_stalled` means the keystrokes never landed — the pane is still

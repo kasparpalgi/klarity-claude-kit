@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { classify, downgrade, explicitTier } from "./classify.js";
 import { usageLimitHit } from "./usage.js";
 import { aiderArgs, aiderFailed, excludeAiderFiles } from "./aider.js";
-import { herdrUp, runInHerdr } from "./herdr.js";
+import { herdrUp, paneLive, runInHerdr } from "./herdr.js";
 import { notify, tail } from "./notify.js";
 import { loadConfig } from "./config.js";
 import {
@@ -155,6 +155,10 @@ async function runRepo(repoName, repoPath) {
   if (!task) return false;
   let { name: filename } = task;
   const { stem: taskStem, number, mtime } = task;
+  if (cfg.useHerdr && (await paneLive(`task-${number}`))) {
+    log(`skip ${repoName} — ${filename} is still running in its pane`);
+    return false;
+  }
 
   await ignoreLogs(join(repoPath, dir), repoPath);
   const logFile = join(

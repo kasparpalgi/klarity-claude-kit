@@ -6,9 +6,9 @@
  * same tick and run it twice. The Kanban card names the machine, the task file
  * carries it as `> Machine: karel`, and each runner takes only its own.
  *
- * A file with no `> Machine:` line is *unaddressed*, and exactly one machine may
- * claim those (`machineDefault`) — otherwise every task file written before this
- * existed would double-run.
+ * A file with no `> Machine:` line is *unaddressed* ("Auto" on the card): any
+ * runner may take it, after claiming it with a pushed `> Machine:` line of its own
+ * (claim.js) so it never double-runs.
  */
 
 const LINE = /^[ \t]*>?[ \t]*machine:[ \t]*(.+?)[ \t]*$/im;
@@ -23,6 +23,10 @@ export const slug = (s) =>
 /** The machine a task file names, slugged — null when it names none. */
 export const machineOf = (text) => slug(LINE.exec(text ?? "")?.[1]) || null;
 
+/** The id this runner writes into a claim — the first spelling it answers to. */
+export const myName = ({ machine }) =>
+  [machine ?? []].flat().map(slug).find(Boolean) ?? null;
+
 /**
  * `(machine) => boolean` for "is this task mine?", over the slug `machineOf`
  * returned. With no `machine` configured the runner is the only one there is and
@@ -32,10 +36,10 @@ export const machineOf = (text) => slug(LINE.exec(text ?? "")?.[1]) || null;
  * sits in the queue forever — silently. Accepting `["karel", "karel-ubuntu"]` costs
  * nothing and absorbs the board spelling its label differently than the config does.
  */
-export function machineFilter({ machine, machineDefault }) {
+export function machineFilter({ machine }) {
   const me = new Set([machine ?? []].flat().map(slug).filter(Boolean));
   if (!me.size) return () => true;
-  return (want) => (want ? me.has(want) : Boolean(machineDefault));
+  return (want) => !want || me.has(want);
 }
 
 /** The subset of `pending` this machine owns. */

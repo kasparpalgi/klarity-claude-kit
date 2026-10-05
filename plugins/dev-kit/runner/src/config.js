@@ -27,10 +27,8 @@ export function loadConfig(
     taskMinutes: file.taskMinutes ?? 240,
     blockedMinutes: file.blockedMinutes ?? 30,
     // This computer's id. Unset means "the only machine" — take every task.
-    // Set, and a task file's `> Machine:` line has to name it (see machine.js).
+    // Set, and it takes tasks naming it plus unaddressed ones it claims (claim.js).
     machine: file.machine ?? null,
-    // Exactly one machine may also take the unaddressed tasks.
-    machineDefault: file.machineDefault ?? false,
     // How often the daemon adopts newly connected boards. 0 turns it off and
     // `npm run onboard` goes back to being the only way in.
     onboardMinutes: file.onboardMinutes ?? 5,

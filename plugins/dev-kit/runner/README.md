@@ -286,7 +286,6 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 | `taskMinutes`    | cap on one `/todo` run (default 240) — only a still-`working` agent ever reaches it, so it guards against a hung agent, not a long task. At 45, Opus/high tasks with an E2E run were parked mid-work and re-run (tekdok 034, kanban 206) |
 | `blockedMinutes` | how long to wait for a human to answer a prompt (default 30)    |
 | `machine`        | this computer's id — a string or a list of spellings it answers to. Unset means it is the only runner and takes every task |
-| `machineDefault` | this machine also takes tasks with no `> Machine:` line (default false) |
 | `codeRoot`       | where onboarding looks for clones and puts new ones (default `~/Documents/GitHub`) |
 | `onboardMinutes` | how often the daemon adopts newly connected boards (default 5; `0` turns it off) |
 | `seo`            | repos (`"owner/repo"`) that also get the claude-seo plugin — landing / marketing sites only. A board gets it too with `"seo": true` in its `github` JSON. For an already-onboarded repo, add it here and run `npm run onboard -- --all` |
@@ -335,12 +334,15 @@ Each runner sets its own id in `config.json` and takes only the tasks addressed 
 ```json
 { "machine": "karel" }                        // Karel, an Ubuntu box
 { "machine": "dell" }                         // Dell (servo), the other Ubuntu box
-{ "machine": "mac", "machineDefault": true }  // this Mac
+{ "machine": "mac" }                         // this Mac
 ```
 
-A file with **no** `> Machine:` line is unaddressed — every task file written before
-this existed. Exactly one machine may claim those, the one with `machineDefault`.
-Leave it off everywhere else, or the double-run comes back.
+A file with **no** `> Machine:` line is unaddressed — "Auto" on the card. Any runner
+may take it, but claims it first: it writes its own `> Machine:` line, commits, pushes
+and sets the card's machine. A push is atomic, so when two runners race exactly one
+lands; the loser drops its commit and pulls the winner's line (`src/claim.js`). Auto
+used to mean "the Mac only" (`machineDefault`, now ignored), so an Auto card sat in
+TODO on Dell and Karel whenever the Mac was busy or off.
 
 `machine` also accepts a list (`["karel", "karel-ubuntu"]`) so a board label spelled
 differently than the config still lands. A task addressed to a name **no** runner
@@ -466,6 +468,7 @@ silent no-op and nothing else changes.
 | `src/onboard.js` | connected boards → clones, `config.json` entries, the peer machine. The daemon calls it on a timer |
 | `src/scaffold.js`| one clone → plugin enabled, task folder, CLAUDE.md, dependencies |
 | `src/trust.js`   | pre-answer Claude's folder-trust dialog in `~/.claude.json` |
+| `src/claim.js`   | claim an Auto (unaddressed) task with a pushed `> Machine:` line before running it |
 | `src/notify.js`  | Pushbullet |
 
 ## Notes

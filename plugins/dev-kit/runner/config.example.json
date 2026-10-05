@@ -2,7 +2,6 @@
 	"pollSeconds": 60,
 	"checkpointQuietSeconds": 60,
 	"machine": "mac",
-	"machineDefault": true,
 	"useHerdr": true,
 	"unattended": true,
 	"taskMinutes": 45,

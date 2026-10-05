@@ -24,7 +24,8 @@ import {
   autoFinish,
 } from "./repo.js";
 import { blockedFile, listPending, pick, stemOf, todoDir } from "./queue.js";
-import { machineFilter, machineOf, mine } from "./machine.js";
+import { machineFilter, machineOf, mine, myName } from "./machine.js";
+import { claim } from "./claim.js";
 import { cardIdOf, closeLoop, reconcileCards } from "./kanban.js";
 import { onboard } from "./onboard.js";
 import { selfUpdate } from "./selfUpdate.js";
@@ -169,12 +170,21 @@ async function runRepo(repoName, repoPath) {
   // attempt counts are still ours to prune) but are never picked here.
   const task = await pick(repoName, mine(pending, machineFilter(cfg)));
   if (!task) return false;
-  let { name: filename } = task;
-  const { stem: taskStem, number, mtime } = task;
-  if (cfg.useHerdr && (await paneLive(`task-${number}`))) {
-    log(`skip ${repoName} — ${filename} is still running in its pane`);
+  if (cfg.useHerdr && (await paneLive(`task-${task.number}`))) {
+    log(`skip ${repoName} — ${task.name} is still running in its pane`);
     return false;
   }
+  const me = myName(cfg);
+  if (!task.machine && me) {
+    if (!(await claim(repoPath, dir, task, me, cfg.kanban))) {
+      log(`skip ${repoName} — ${task.name} claimed by another machine`);
+      return false;
+    }
+    log(`  ${repoName} ${task.name} — claimed for ${me}`);
+    task.mtime = statSync(task.path).mtimeMs;
+  }
+  let { name: filename } = task;
+  const { stem: taskStem, number, mtime } = task;
 
   await ignoreLogs(join(repoPath, dir), repoPath);
   const logFile = join(
@@ -509,7 +519,7 @@ async function check() {
     `herdr: ${cfg.useHerdr ? ((await herdrUp()) ? "up" : "ENABLED BUT DOWN") : "off"}`,
   );
   log(
-    `machine: ${cfg.machine ?? "(unset — takes every task)"}${cfg.machineDefault ? " + unaddressed" : ""}`,
+    `machine: ${cfg.machine ?? "(unset — takes every task)"}`,
   );
   const isMine = machineFilter(cfg);
   const cooldown = state.cooldownUntil();

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { machineFilter, machineOf, mine, slug } from "../src/machine.js";
+import { machineFilter, machineOf, mine, myName, slug } from "../src/machine.js";
 
 test("machineOf reads the line the Kanban writes", () => {
   assert.equal(machineOf("> Machine: karel\n\n# Task"), "karel");
@@ -29,19 +29,18 @@ test("no machine configured takes everything — the single-machine setup", () =
   assert.equal(isMine("karel"), true);
 });
 
-test("a configured machine takes only its own addressed tasks", () => {
+test("a configured machine takes its own and unaddressed tasks, not others", () => {
   const isMine = machineFilter({ machine: "karel" });
   assert.equal(isMine("karel"), true);
   assert.equal(isMine("Karel"), false, "machineOf already slugged it");
   assert.equal(isMine("mac"), false);
-  assert.equal(isMine(null), false);
+  assert.equal(isMine(null), true, "Auto — any runner may claim it");
 });
 
-test("the default machine also takes unaddressed tasks", () => {
-  const isMine = machineFilter({ machine: "mac", machineDefault: true });
-  assert.equal(isMine(null), true);
-  assert.equal(isMine("mac"), true);
-  assert.equal(isMine("karel"), false);
+test("myName is the first spelling a runner answers to", () => {
+  assert.equal(myName({ machine: ["Dell", "dell-ubuntu"] }), "dell");
+  assert.equal(myName({ machine: "karel" }), "karel");
+  assert.equal(myName({}), null);
 });
 
 test("mine() keeps queue order and drops other machines' tasks", () => {
@@ -51,11 +50,8 @@ test("mine() keeps queue order and drops other machines' tasks", () => {
     { name: "003-c-TODO.md", machine: "mac" },
   ];
   const names = (cfg) => mine(pending, machineFilter(cfg)).map((p) => p.name);
-  assert.deepEqual(names({ machine: "karel" }), ["002-b-TODO.md"]);
-  assert.deepEqual(names({ machine: "mac", machineDefault: true }), [
-    "001-a-TODO.md",
-    "003-c-TODO.md",
-  ]);
+  assert.deepEqual(names({ machine: "karel" }), ["001-a-TODO.md", "002-b-TODO.md"]);
+  assert.deepEqual(names({ machine: "mac" }), ["001-a-TODO.md", "003-c-TODO.md"]);
 });
 
 test("a machine may answer to more than one spelling", () => {

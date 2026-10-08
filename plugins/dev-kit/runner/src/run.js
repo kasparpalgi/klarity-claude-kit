@@ -27,6 +27,7 @@ import { blockedFile, listPending, pick, stemOf, todoDir } from "./queue.js";
 import { machineFilter, machineOf, mine, myName } from "./machine.js";
 import { claim } from "./claim.js";
 import { cardIdOf, closeLoop, reconcileCards } from "./kanban.js";
+import { fileFollowUps } from "./followup.js";
 import { onboard } from "./onboard.js";
 import { selfUpdate } from "./selfUpdate.js";
 import { syncSecrets } from "./secrets.js";
@@ -115,13 +116,25 @@ const reconciledAt = new Map();
 
 async function reconcile(repoName, repoPath, dir) {
   const head = (await git(["rev-parse", "HEAD"], repoPath)).stdout.trim();
-  if (reconciledAt.get(repoName) === head) return;
+  const since = reconciledAt.get(repoName);
+  if (since === head) return;
   reconciledAt.set(repoName, head);
   const lines = await reconcileCards(cfg.kanban, {
     repoName,
     repoPath,
     dir,
   }).catch((err) => [`kanban: ${err.message}`]);
+  // Not on the first sweep after a start: with no `since`, the whole history would
+  // count as new. A follow-up pushed while no runner was up is left for a human.
+  if (since)
+    lines.push(
+      ...(await fileFollowUps(cfg.kanban, {
+        repoName,
+        repoPath,
+        dir,
+        since,
+      }).catch((err) => [`follow-ups: ${err.message}`])),
+    );
   for (const line of lines) log(`  ${repoName} ↺ ${line}`);
 }
 
@@ -380,22 +393,11 @@ async function runRepo(repoName, repoPath) {
   );
 
   // The file side is finished; now say so on the card it came from.
-  const { stdout: addedOut } = await git(
-    [
-      "diff",
-      "--name-only",
-      "--diff-filter=A",
-      `${before.trim()}..${after.trim()}`,
-    ],
-    repoPath,
-  );
-  const added = addedOut.split("\n").filter(Boolean);
   const closed = await closeLoop(cfg.kanban, {
     repoName,
     repoPath,
     dir,
     stem,
-    added,
     blocked: Boolean(blocked),
   }).catch((err) => [`kanban: ${err.message}`]);
   for (const line of closed) log(`  ${line}`);
@@ -518,9 +520,7 @@ async function check() {
   log(
     `herdr: ${cfg.useHerdr ? ((await herdrUp()) ? "up" : "ENABLED BUT DOWN") : "off"}`,
   );
-  log(
-    `machine: ${cfg.machine ?? "(unset — takes every task)"}`,
-  );
+  log(`machine: ${cfg.machine ?? "(unset — takes every task)"}`);
   const isMine = machineFilter(cfg);
   const cooldown = state.cooldownUntil();
   if (cooldown) log(`⏳ usage limit — waiting until ${stamp(cooldown)}`);

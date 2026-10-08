@@ -246,6 +246,13 @@ Each tick (one per `pollSeconds`), for each configured repo:
    last 15 lines to the phone (success and failure alike).
 7. If HEAD advanced (i.e. `/todo` committed), `git push origin HEAD`.
 
+**Follow-ups get an issue first.** Whenever a repo's HEAD moves, a new suffixless
+`NNN-slug.md` with no card of its own — split out by an agent, under the runner or
+not — is filed as a GitHub issue, renamed to the issue's number when that number is
+free, and put on the board's Backlog with the issue linked (`src/followup.js`). Only
+repos with a connected board take part. Every runner sees the same commits, so the card
+doubles as a lock: the first card in for a path wins and the others back off.
+
 Logs are gitignored: the first run in a repo commits `*.log` to the task folder's
 `.gitignore`, so transcripts never dirty the tree or reach the remote.
 
@@ -468,6 +475,7 @@ silent no-op and nothing else changes.
 | `src/onboard.js` | connected boards → clones, `config.json` entries, the peer machine. The daemon calls it on a timer |
 | `src/scaffold.js`| one clone → plugin enabled, task folder, CLAUDE.md, dependencies |
 | `src/trust.js`   | pre-answer Claude's folder-trust dialog in `~/.claude.json` |
+| `src/followup.js`| new follow-up file → GitHub issue → Backlog card, file renamed to the issue number |
 | `src/claim.js`   | claim an Auto (unaddressed) task with a pushed `> Machine:` line before running it |
 | `src/notify.js`  | Pushbullet |
 

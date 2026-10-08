@@ -17,7 +17,6 @@ import { stemOf } from "./queue.js";
 // The exact marker buildTaskFile() writes, anchored to the start of its own line:
 // a follow-up file quotes its parent as "(from Kanban card `…`)" and must not match.
 const CARD_ID = /^_From Kanban card `([0-9a-f-]{36})`/m;
-const FOLLOW_UP = /^\d{3,}-.*(?<!-TODO)(?<!-DONE)(?<!-BLOCKED)\.md$/i;
 
 /** The card a task file was written for, or null for a hand-written file. */
 export const cardIdOf = (text) => CARD_ID.exec(text)?.[1] ?? null;
@@ -62,7 +61,7 @@ export async function gql(kanban, query, variables) {
 
 // `boards.github` is a text column holding JSON, not jsonb — `_contains` is a
 // runtime error on it, which is what the app's own GET_BOARD_BY_REPO still does.
-const BOARD = `query B($repo: String!) {
+export const BOARD = `query B($repo: String!) {
   boards(where: {github: {_ilike: $repo}}, limit: 1) {
     id user_id lists(order_by: {sort_order: asc}) { id name }
   }
@@ -96,14 +95,6 @@ const SET_PATH = `mutation P($id: uuid!, $path: String!) {
   ) { id }
 }`;
 
-const NEW_CARD = `mutation N($o: [todos_insert_input!]!) {
-  insert_todos(objects: $o) { returning { id title } }
-}`;
-
-const EXISTING = `query E($paths: [String!]!) {
-  todos(where: {task_file_path: {_in: $paths}}) { task_file_path }
-}`;
-
 /** The `-DONE.md` — or `-BLOCKED.md` — this task ended as. Keyed by stem, because a
  * bare NNN can belong to two tasks and this file decides which card gets the Results. */
 export function doneFile(dir, stem) {
@@ -113,12 +104,12 @@ export function doneFile(dir, stem) {
 }
 
 /**
- * Move the card to Review with the agent's own Results as a comment, and file any
- * follow-up task file the run added as a Backlog card. Returns log lines.
+ * Move the card to Review with the agent's own Results as a comment. Follow-ups the
+ * run split out are filed by the reconcile sweep (followup.js). Returns log lines.
  */
 export async function closeLoop(
   kanban,
-  { repoName, repoPath, dir, stem, added, blocked },
+  { repoName, repoPath, dir, stem, blocked },
 ) {
   const full = join(repoPath, dir);
   const done = doneFile(full, stem);
@@ -167,10 +158,6 @@ export async function closeLoop(
         : `results posted (card not moved — create a "${kanban.lists.review}" list)`,
     );
   }
-
-  out.push(
-    ...(await fileFollowUps(kanban, { board, listId, full, dir, added })),
-  );
   return out;
 }
 
@@ -225,44 +212,9 @@ export async function reconcileCards(kanban, { repoName, repoPath, dir }) {
       repoPath,
       dir,
       stem: stemOf(name),
-      added: [],
       blocked: /-BLOCKED\.md$/i.test(name),
     });
     out.push(`${name}: ${lines.join("; ")}`);
   }
   return out;
-}
-
-/** A new NNN-*.md with no card of its own is a follow-up the agent split out. */
-async function fileFollowUps(kanban, { board, listId, full, dir, added }) {
-  const backlog = listId(kanban.lists.backlog);
-  const files = added
-    .filter((f) => f.startsWith(`${dir}/`) && FOLLOW_UP.test(basename(f)))
-    .filter((f) => !cardIdOf(readFileSync(join(full, basename(f)), "utf8")));
-  if (!files.length) return [];
-  if (!backlog)
-    return [
-      `no "${kanban.lists.backlog}" list — ${files.length} follow-up(s) unfiled`,
-    ];
-
-  const { todos } = await gql(kanban, EXISTING, { paths: files });
-  const taken = new Set(todos.map((t) => t.task_file_path));
-  const objects = files
-    .filter((f) => !taken.has(f))
-    .map((f) => {
-      const text = readFileSync(join(full, basename(f)), "utf8");
-      return {
-        title: titleOf(text, f),
-        content: text,
-        list_id: backlog,
-        user_id: board.user_id,
-        task_file_path: f,
-      };
-    });
-  if (!objects.length) return [];
-
-  const { insert_todos } = await gql(kanban, NEW_CARD, { o: objects });
-  return insert_todos.returning.map(
-    (t) => `follow-up → ${kanban.lists.backlog}: ${t.title}`,
-  );
 }

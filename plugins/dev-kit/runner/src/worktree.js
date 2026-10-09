@@ -35,8 +35,9 @@ export const worktreeOf = (repoPath, stem) =>
 
 /**
  * The task's worktree, made on first use: on `origin/todo/<stem>` when an earlier
- * attempt pushed one, else on a fresh `origin/<base>`. One left by an attempt that hit
- * the usage limit is reused as it is. A new tree gets the clone's gitignored secrets
+ * attempt pushed one, else on a fresh `origin/<base>` — or on the local branch when it
+ * already holds that and more, such as bookkeeping that did not land. One left by an
+ * attempt that hit the usage limit is reused as it is. A new tree gets the clone's gitignored secrets
  * and, with a lockfile, `npm ci` — a session cannot test without either.
  */
 export async function openWorktree(repoPath, stem, base, log = () => {}) {
@@ -49,18 +50,17 @@ export async function openWorktree(repoPath, stem, base, log = () => {}) {
     ["rev-parse", "--verify", "-q", `refs/remotes/origin/${branch}`],
     repoPath,
   );
+  const start = pushed ? `origin/${branch}` : `origin/${base}`;
+  const keep = await ok(
+    ["merge-base", "--is-ancestor", start, `refs/heads/${branch}`],
+    repoPath,
+  );
   mkdirSync(dirname(path), { recursive: true });
   rmSync(path, { recursive: true, force: true });
   await git(
-    [
-      "worktree",
-      "add",
-      "--no-track",
-      "-B",
-      branch,
-      path,
-      pushed ? `origin/${branch}` : `origin/${base}`,
-    ],
+    keep
+      ? ["worktree", "add", path, branch]
+      : ["worktree", "add", "--no-track", "-B", branch, path, start],
     repoPath,
   );
   for (const f of Object.keys(await secretsOf(repoPath))) {
@@ -101,7 +101,7 @@ async function openPr(repoName, branch, cwd) {
         "--state",
         "open",
         "--json",
-        "number,isDraft,url",
+        "number,isDraft,url,title,headRefName",
       ],
       cwd,
     ),
@@ -110,12 +110,47 @@ async function openPr(repoName, branch, cwd) {
 }
 
 /**
+ * Put a session that ended off any branch back on the task's. Refuses when that would
+ * drop the branch's own commits, or ship commits that belong to another branch.
+ */
+async function backOnBranch(path, branch, base) {
+  const local = await ok(
+    ["rev-parse", "--verify", "-q", `refs/heads/${branch}`],
+    path,
+  );
+  if (
+    local &&
+    !(await ok(["merge-base", "--is-ancestor", branch, "HEAD"], path))
+  )
+    throw new Error(
+      `the session left HEAD off ${branch}, at commits that do not contain it`,
+    );
+  const count = async (...not) =>
+    out(["rev-list", "--count", "HEAD", "--not", ...not], path);
+  const pushed = await ok(
+    ["rev-parse", "--verify", "-q", `refs/remotes/origin/${branch}`],
+    path,
+  );
+  const ours = await count(
+    `origin/${base}`,
+    ...(pushed ? [`origin/${branch}`] : []),
+  );
+  const others = await count(`--exclude=origin/${branch}`, "--remotes=origin");
+  if (ours !== others)
+    throw new Error(
+      `the session left HEAD on another branch's commits, not on ${branch}`,
+    );
+  await git(["switch", "-C", branch], path);
+}
+
+/**
  * Ship what a session left in its worktree. Leftovers become a commit on the branch;
  * a detached HEAD gets the task's branch. A failed run passes `bookkeeping: false`:
  * whatever it wrote goes to a PR, not straight to the base. Returns one of
  *   { ahead: 0 }                 nothing on the branch — the session changed nothing
  *   { bookkeeping: sha, branch } only the task folder changed; it may go to the base
- *   { pr, url, opened, leftover, branch }
+ *   { pr, url, opened, leftover, branch, undone }
+ * where `undone` is the ready PR turned back into a draft, which needs a new review,
  * and throws when the branch will not push.
  */
 export async function shipBranch({
@@ -131,9 +166,10 @@ export async function shipBranch({
   let branch = await out(["branch", "--show-current"], path);
   if (!branch || branch === base) {
     branch = branchOf(stem);
-    await git(["switch", "-C", branch], path);
+    await backOnBranch(path, branch, base);
   }
-  const leftover = (await dirtyPaths(path)).length > 0;
+  const dirty = await dirtyPaths(path);
+  const leftover = dirty.length > 0;
   if (leftover) {
     await git(["add", "-A"], path);
     await git(
@@ -163,7 +199,10 @@ export async function shipBranch({
   await git(["push", "-u", "origin", `HEAD:refs/heads/${branch}`], path);
   if (existing) {
     // Uncommitted work never merged unreviewed: back to draft, which waits for review.
-    if (leftover && !existing.isDraft) {
+    // The task folder alone is bookkeeping, such as a review session's own rename.
+    const undone =
+      !existing.isDraft && dirty.some((f) => !f.startsWith(`${dir}/`));
+    if (undone) {
       await gh(
         ["pr", "ready", String(existing.number), "--undo", "--repo", repoName],
         path,
@@ -187,6 +226,7 @@ export async function shipBranch({
       opened: false,
       leftover,
       branch,
+      undone: undone ? existing : null,
     };
   }
   const body = [

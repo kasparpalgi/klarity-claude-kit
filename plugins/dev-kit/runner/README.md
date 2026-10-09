@@ -346,15 +346,16 @@ Each runner sets its own id in `config.json` and takes only the tasks addressed 
 ```
 
 A file with **no** `> Machine:` line is unaddressed — "Auto" on the card. Any runner
-may take it, but claims it first, in the Kanban — never with a commit: it sets the
+may take it, but claims it first, in the Kanban: it sets the
 card's machine compare-and-swap (the update matches only while the field is empty or
 already its own), so when two runners race exactly one gets its row back. A task with
 no card of its own — a failure CI filed, a review task an agent wrote — is adopted as a
 TODO card first; the first card in for its path wins, as follow-ups are filed
-(`src/claim.js`). With no Kanban configured there is nothing to race and the task is
-taken. Claims used to be `chore(todo): claim NNN for karel` commits on `main`; since
-tektok-app moved to pull requests (its task 184) nothing but finished bookkeeping may
-land there.
+(`src/claim.js`). A card deleted since the file was written is adopted anew, not read
+as another runner's claim. With no Kanban to lock with (none configured, or no TODO list
+on the repo's board) the claim is a pushed `chore(todo): claim NNN for karel` commit that
+adds the `> Machine:` line, as before tektok-app's task 184: a push is atomic, and it
+touches only the task file, which is bookkeeping even in a pull request repo.
 
 `machine` also accepts a list (`["karel", "karel-ubuntu"]`) so a board label spelled
 differently than the config still lands. A task addressed to a name **no** runner
@@ -371,23 +372,29 @@ A repo in `pullRequests` never gets code from the runner on its base branch:
 
 1. **Each task runs in its own worktree** — `~/.kanban-runner/worktrees/<repo>/<stem>`, on
    branch `todo/<stem>`, from a fresh `origin/main` (or from `origin/todo/<stem>` when an
-   earlier attempt pushed one). The tree gets the clone's gitignored secrets and, with a
+   earlier attempt pushed one, or from the local branch when it holds that and more). The
+   tree gets the clone's gitignored secrets and, with a
    lockfile, `npm ci`. The clone itself stays on `main`, so two sessions never share a tree.
 2. **When the session ends**, anything it left uncommitted is committed to its branch, the
    branch is pushed, and if the agent opened no PR the runner opens a **draft** (a ready
-   PR that received leftovers is turned back into a draft). A session that changed only its
-   task file is bookkeeping and lands on `main` directly; one that changed nothing is
-   finished there as before.
+   PR that received leftovers outside the task folder is turned back into a draft and gets
+   a new `codeReviewPr<N>` task). A session that changed only its task file is bookkeeping
+   and lands on `main` directly; one that changed nothing is finished there as before. A
+   session that ended off any branch is put back on `todo/<stem>` only when that keeps the
+   branch's commits and adds none of another branch's; otherwise the worktree is left for
+   a person.
 3. **The task is done when its PR merges.** Until then the file stays `-TODO` on `main` and
-   `listPending()` skips it: a PR carries a task when its branch is `todo/<stem>` (or
-   `todo/NNN-…` with the file's own issue), it says `Closes #NNN`, it renames the task file
-   to `-DONE`, or the session ended on it (a review or gate fix works on another PR's
-   branch). Once merged, a task still `-TODO` on `main` is renamed `-DONE` there, and the
-   reconcile sweep closes its card.
+   `listPending()` skips it: a PR carries a task when its branch is `todo/<stem>`, it says
+   `Closes #NNN` for the file's own issue, it renames the task file to `-DONE`, or the
+   session ended on it (a review or gate fix works on another PR's branch). Once merged, a
+   task still `-TODO` on `main` is renamed `-DONE` there, unless the merge is older than
+   the task file. So is a `codeReview` task that came in with the merge of the PR it
+   names. The reconcile sweep closes the card.
 4. **Every tick looks at the open PRs from `todo/*` and `claude/*`** (one `gh` round a
    minute). A draft older than 15 minutes with no `codeReview` task naming it gets
    `NNN-codeReviewPr<N>-TODO.md`; a ready, green PR without `hold` still open 30 minutes
-   after its last check gets `NNN-mergeStuckPr<N>-TODO.md` — the merge job failed. Red
+   after its last check gets `NNN-mergeStuckPr<N>-TODO.md` — the merge job failed — once
+   per green run, so a finished one that did not unstick it is not filed again. Red
    gates and refused merges are CI's to file (`NNN-gateFailurePr<N>-TODO.md`).
 5. **`> After: #78`** under the tier line holds a task until #78 is a merged PR or a closed
    issue: a session starts from `main` and cannot see work that has not landed.

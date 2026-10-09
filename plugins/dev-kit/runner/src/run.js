@@ -36,7 +36,15 @@ import { machineFilter, machineOf, mine, myName } from "./machine.js";
 import { claim } from "./claim.js";
 import { issueOf } from "./issue.js";
 import { cardIdOf, closeLoop, reconcileCards, titleOf } from "./kanban.js";
-import { finishMerged, prOf, prs, sweepPrs, waiting } from "./pr.js";
+import {
+  fileReview,
+  finishMerged,
+  forget,
+  prOf,
+  prs,
+  sweepPrs,
+  waiting,
+} from "./pr.js";
 import {
   closeWorktree,
   landBookkeeping,
@@ -281,12 +289,16 @@ async function runRepo(repoName, repoPath) {
   }
   const me = myName(cfg);
   if (!task.machine && me) {
-    const won = await claim(cfg.kanban, { repoName, dir, task, me }).catch(
-      (err) => {
-        log(`skip ${repoName} — cannot claim ${task.name}: ${err.message}`);
-        return null;
-      },
-    );
+    const won = await claim(cfg.kanban, {
+      repoPath,
+      repoName,
+      dir,
+      task,
+      me,
+    }).catch((err) => {
+      log(`skip ${repoName} — cannot claim ${task.name}: ${err.message}`);
+      return null;
+    });
     if (won === null) return false;
     if (!won) {
       theirs.set(`${repoName}#${task.stem}`, task.mtime);
@@ -294,6 +306,7 @@ async function runRepo(repoName, repoPath) {
       return false;
     }
     log(`  ${repoName} ${task.name} — claimed for ${me}`);
+    task.mtime = statSync(task.path).mtimeMs;
   }
   let { name: filename } = task;
   const { stem: taskStem, number, mtime } = task;
@@ -608,7 +621,21 @@ async function finishPrRun({
 
   if (shipped.pr) {
     state.handOff(repoName, stem, shipped.pr);
+    forget(repoName);
     await closeWorktree(repoPath, cwd);
+    if (shipped.undone) {
+      const filed = await fileReview({
+        repoPath,
+        dir,
+        base,
+        pr: shipped.undone,
+      }).catch((err) => log(`  review for #${shipped.pr}: ${err.message}`));
+      log(
+        filed
+          ? `  filed ${filed} — #${shipped.pr} is a draft again`
+          : `  ⚠ no review filed for #${shipped.pr}, now a draft again`,
+      );
+    }
     const what = `${shipped.opened ? "opened draft" : "pushed to"} PR #${shipped.pr}${shipped.leftover ? " with the work it left uncommitted" : ""}`;
     log(`⇄ ${filename} — ${what}${failed ? ` after ${failed}` : ""}`);
     await notify(

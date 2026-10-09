@@ -30,6 +30,9 @@ export const STUCK_MS = 30 * MINUTE;
 
 const seen = new Map();
 
+/** Drop the cached list, so a PR this runner just opened counts on the next tick. */
+export const forget = (repoName) => seen.delete(repoName);
+
 /** Open and recently merged PRs, at most one `gh` round per repo per minute. */
 export async function prs(repoName, now = Date.now()) {
   const hit = seen.get(repoName);
@@ -52,7 +55,7 @@ export async function prs(repoName, now = Date.now()) {
   const open = await list("open", FIELDS, 100);
   const merged = await list(
     "merged",
-    "number,title,body,headRefName,files",
+    "number,title,body,headRefName,files,mergedAt",
     30,
   );
   const out = { at: now, open, merged };
@@ -62,18 +65,16 @@ export async function prs(repoName, now = Date.now()) {
 
 /**
  * What a PR carries: task stems — its branch is `todo/<stem>`, or it renames the task
- * file to `-DONE`/`-BLOCKED` — and issue numbers, from a `todo/NNN-…` branch or a
- * `Closes #NNN`. A `-TODO` file in its diff proves nothing: it may be a new task the PR
- * queues, which its merge must not retire.
+ * file to `-DONE`/`-BLOCKED` — and the issues it closes. A branch's number is a task's,
+ * not an issue's: CI files its failures under the next free one. A `-TODO` file in its
+ * diff proves nothing: it may be a new task the PR queues, which its merge must not
+ * retire.
  */
 export function carried(pr, dir) {
   const stems = new Set();
   const issues = new Set();
-  const branch = /^todo\/((\d+)-.+)$/.exec(pr.headRefName ?? "");
-  if (branch) {
-    stems.add(branch[1]);
-    issues.add(String(Number(branch[2])));
-  }
+  const branch = /^todo\/(\d+-.+)$/.exec(pr.headRefName ?? "");
+  if (branch) stems.add(branch[1]);
   for (const f of pr.files ?? [])
     if (dirname(f.path) === dir && /-(DONE|BLOCKED)\.md$/i.test(f.path))
       stems.add(stemOf(basename(f.path)));
@@ -121,9 +122,31 @@ async function pushOrDrop(repoPath) {
   }
 }
 
+/** When `name` first reached the base branch, in ms; 0 when git does not know. */
+async function addedAt(repoPath, dir, name) {
+  const { stdout } = await git(
+    ["log", "--diff-filter=A", "--format=%ct", "-1", "--", join(dir, name)],
+    repoPath,
+  );
+  return Number(stdout.trim()) * 1000;
+}
+
+/** A review task that came in with the merge of the very PR it reviews. */
+function reviewOf(repoPath, dir, task, merged) {
+  if (!/codeReview/i.test(task.name)) return null;
+  const text = readFileSync(join(repoPath, dir, task.name), "utf8");
+  return merged.find(
+    (pr) =>
+      pr.files?.some((f) => f.path === join(dir, task.name)) &&
+      prRef(pr.number).test(text),
+  );
+}
+
 /**
  * A merged PR whose task is still `-TODO` on the base branch: the session never renamed
- * it, so rename it here. `pending` is the unfiltered queue. Returns log lines.
+ * it, so rename it here. A merge older than the task file cannot have carried it, and a
+ * review task its own PR brought in is moot. `pending` is the unfiltered queue. Returns
+ * log lines.
  */
 export async function finishMerged({
   repoPath,
@@ -134,7 +157,13 @@ export async function finishMerged({
 }) {
   const out = [];
   for (const task of pending) {
-    const pr = prOf(task, merged, dir, handedTo(task.stem));
+    const handed = handedTo(task.stem);
+    const since = await addedAt(repoPath, dir, task.name);
+    const after = merged.filter(
+      (pr) => pr.number === handed || !(Date.parse(pr.mergedAt) < since),
+    );
+    const pr =
+      prOf(task, after, dir, handed) ?? reviewOf(repoPath, dir, task, merged);
     if (!pr) continue;
     const done = await autoFinish(repoPath, dir, task.name, {
       note: `Finished in pull request #${pr.number}, which has merged; the runner renamed the file.`,
@@ -155,12 +184,12 @@ export function nextNumber(names) {
   return String(Math.max(0, ...used) + 1).padStart(3, "0");
 }
 
+const prRef = (n) =>
+  new RegExp(`(?:\\bPR\\s*#|pull request #|/pull/|gh pr ready )${n}\\b`, "i");
+
 /** A `codeReview` task naming PR #n, in any state — a finished review is not redone. */
 export function reviewed(full, names, n) {
-  const ref = new RegExp(
-    `(?:\\bPR\\s*#|pull request #|/pull/|gh pr ready )${n}\\b`,
-    "i",
-  );
+  const ref = prRef(n);
   return names.some(
     (name) =>
       /codeReview/i.test(name) &&
@@ -185,7 +214,10 @@ export function greenSince(pr) {
   return Math.max(...checks.map((c) => c.at));
 }
 
-const reviewTask = (pr, base) => `> Run with: Opus 5.5 / high
+const NO_REVIEW =
+  "is a draft with no review task, and a draft never merges by itself — the runner filed this one.";
+
+const reviewTask = (pr, base, why = NO_REVIEW) => `> Run with: Opus 5.5 / high
 
 # Code review of pull request #${pr.number}
 
@@ -193,8 +225,7 @@ const reviewTask = (pr, base) => `> Run with: Opus 5.5 / high
 
 [NEVER REMOVE]
 
-Pull request #${pr.number} ("${pr.title}", branch \`${pr.headRefName}\`) is a draft with no review
-task, and a draft never merges by itself — the runner filed this one. ${pr.url}
+Pull request #${pr.number} ("${pr.title}", branch \`${pr.headRefName}\`) ${why} ${pr.url}
 
 Review PR #${pr.number}: \`git fetch origin ${pr.headRefName} && git switch ${pr.headRefName}\`, then run
 \`/code-review high\` on \`origin/${base}...HEAD\`. Fix the confirmed findings on that branch with tests
@@ -251,11 +282,15 @@ export async function sweepPrs({
       const pending = new RegExp(
         `-(?:mergeStuck|gateFailure)Pr${pr.number}-TODO\\.md$`,
       );
-      if (
-        since &&
-        now - since > STUCK_MS &&
-        !names.some((n) => pending.test(n))
-      )
+      const stuck = new RegExp(`-mergeStuckPr${pr.number}-`);
+      // One task per green run: a finished one that did not unstick it is not redone.
+      const filed = (n) =>
+        pending.test(n) ||
+        (stuck.test(n) &&
+          readFileSync(join(full, n), "utf8").includes(
+            new Date(since).toISOString(),
+          ));
+      if (since && now - since > STUCK_MS && !names.some(filed))
         file = [
           `mergeStuckPr${pr.number}`,
           stuckTask(pr, since),
@@ -277,6 +312,30 @@ export async function sweepPrs({
     );
   }
   return out;
+}
+
+/**
+ * File a review for a ready PR the runner turned back into a draft. The sweep would
+ * not: the PR already has a review task, the one that readied it.
+ */
+export async function fileReview({ repoPath, dir, base, pr }) {
+  const why =
+    "was ready, then got work a session left uncommitted (now its last commit), so the runner turned it back into a draft; it needs a review before it merges.";
+  for (let i = 0; i < 3; i++) {
+    await git(["pull", "--rebase", "-q"], repoPath);
+    const name = `${nextNumber(readdirSync(join(repoPath, dir)))}-codeReviewPr${pr.number}-TODO.md`;
+    if (
+      await fileTask(
+        repoPath,
+        dir,
+        name,
+        reviewTask(pr, base, why),
+        `docs(todo): file ${name} — PR #${pr.number} is a draft again (runner)`,
+      )
+    )
+      return name;
+  }
+  return null;
 }
 
 const landed = new Map();

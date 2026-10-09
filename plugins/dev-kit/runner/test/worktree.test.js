@@ -192,3 +192,72 @@ test("a session that changed nothing ships nothing", async () => {
   assert.equal((await ship(path)).ahead, 0);
   assert.ok(!calls().some((c) => c.startsWith("pr create")));
 });
+
+test("a task-folder leftover in a ready PR is bookkeeping: it stays ready", async () => {
+  const { root, clone, calls } = setup();
+  const path = await openWorktree(clone, STEM, "main");
+  writeFileSync(
+    join(root, "prs.json"),
+    '[{"number":94,"isDraft":false,"url":"u","title":"T","headRefName":"todo/078-mentor"}]',
+  );
+  writeFileSync(join(path, DIR, `${STEM}-TODO.md`), "# Mentor\n\n## Results\n");
+
+  const shipped = await ship(path);
+
+  assert.equal(shipped.pr, 94);
+  assert.equal(shipped.undone, null);
+  assert.ok(!calls().some((c) => c.startsWith("pr ready")));
+});
+
+test("a session that wandered off its branch never resets it or ships another's commits", async () => {
+  const { clone, run } = setup();
+  run(clone, "switch", "-qc", "todo/050-other");
+  writeFileSync(join(clone, "other.js"), "x\n");
+  run(clone, "add", "-A");
+  run(clone, "commit", "-qm", "other");
+  run(clone, "push", "-q", "origin", "HEAD");
+  run(clone, "switch", "-q", "main");
+
+  const path = await openWorktree(clone, STEM, "main");
+  writeFileSync(join(path, "app.js"), "2\n");
+  run(path, "commit", "-qam", "work");
+  const tip = run(path, "rev-parse", "HEAD");
+  run(path, "switch", "-q", "--detach", "origin/main");
+  await assert.rejects(ship(path), /off todo\/078-mentor/);
+  assert.equal(run(path, "rev-parse", `todo/${STEM}`), tip, "branch kept");
+
+  const other = await openWorktree(clone, "079-x", "main");
+  run(other, "switch", "-q", "--detach", "origin/todo/050-other");
+  writeFileSync(join(other, "app.js"), "3\n");
+  run(other, "commit", "-qam", "on top of 050");
+  await assert.rejects(
+    ship(other, { stem: "079-x" }),
+    /another branch's commits/,
+  );
+});
+
+test("a detached session that started from main still ships to its branch", async () => {
+  const { clone, run } = setup();
+  const path = await openWorktree(clone, STEM, "main");
+  run(path, "switch", "-q", "--detach");
+  writeFileSync(join(path, "app.js"), "2\n");
+  run(path, "commit", "-qam", "work");
+
+  const shipped = await ship(path);
+
+  assert.equal(shipped.pr, 95);
+  assert.equal(run(path, "branch", "--show-current"), `todo/${STEM}`);
+});
+
+test("a branch whose bookkeeping did not land keeps its commit for the next attempt", async () => {
+  const { clone, run } = setup();
+  const path = await openWorktree(clone, STEM, "main");
+  writeFileSync(join(path, DIR, `${STEM}-TODO.md`), "# Mentor\n\n## Plan\n");
+  run(path, "commit", "-qam", "docs(todo): plan");
+  const tip = run(path, "rev-parse", "HEAD");
+  await closeWorktree(clone, path);
+
+  const again = await openWorktree(clone, STEM, "main");
+
+  assert.equal(run(again, "rev-parse", "HEAD"), tip);
+});

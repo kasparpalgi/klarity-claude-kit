@@ -14,7 +14,15 @@ import { execFile } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
-import { BOARD, cardIdOf, gql, titleOf } from "./kanban.js";
+import {
+  BOARD,
+  CARDS_AT,
+  DROP,
+  NEW_CARD,
+  cardIdOf,
+  gql,
+  titleOf,
+} from "./kanban.js";
 import { issueOf } from "./issue.js";
 import { numberOf } from "./queue.js";
 import { git } from "./repo.js";
@@ -24,11 +32,6 @@ const run = promisify(execFile);
 // Suffixless: -TODO is queued work, -DONE / -BLOCKED are finished.
 const FOLLOW_UP = /^\d{3,}-.*(?<!-TODO)(?<!-DONE)(?<!-BLOCKED)\.md$/i;
 
-const CARDS_AT = `query A($path: String!) {
-  todos(where: {task_file_path: {_eq: $path}}, order_by: [{created_at: asc}, {id: asc}]) { id }
-}`;
-const NEW_CARD = `mutation N($o: todos_insert_input!) { insert_todos_one(object: $o) { id } }`;
-const DROP = `mutation D($id: uuid!) { delete_todos_by_pk(id: $id) { id } }`;
 const FILED = `mutation F($id: uuid!, $set: todos_set_input!) {
   update_todos_by_pk(pk_columns: {id: $id}, _set: $set) { id }
 }`;

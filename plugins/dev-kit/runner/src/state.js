@@ -12,7 +12,13 @@ const FILE =
   process.env.KANBAN_RUNNER_STATE ??
   join(homedir(), ".kanban-runner", "state.json");
 
-const EMPTY = { blocked: {}, tries: {}, cooldownUntil: 0, lastRepo: null };
+const EMPTY = {
+  blocked: {},
+  tries: {},
+  handed: {},
+  cooldownUntil: 0,
+  lastRepo: null,
+};
 
 function read() {
   try {
@@ -88,6 +94,31 @@ export function pruneTries(repo, pendingStems) {
     changed = true;
   }
   if (changed) write(s);
+}
+
+/**
+ * The pull request a task's session ended on. A review or a gate fix works on another
+ * PR's branch, so nothing in that PR names the task; this does, until the task retires.
+ */
+export function handOff(repo, stem, pr) {
+  const s = read();
+  s.handed[key(repo, stem)] = Number(pr);
+  write(s);
+}
+
+export const handedTo = (repo, stem) => read().handed[key(repo, stem)] ?? null;
+
+/** Forget hand-offs of tasks that are no longer pending at all. */
+export function pruneHanded(repo, pendingStems) {
+  const s = read();
+  const before = Object.keys(s.handed).length;
+  for (const k of Object.keys(s.handed))
+    if (
+      k.startsWith(`${repo}#`) &&
+      !pendingStems.includes(k.slice(repo.length + 1))
+    )
+      delete s.handed[k];
+  if (Object.keys(s.handed).length !== before) write(s);
 }
 
 /** Store which repo ran last so the next tick can start after it (round-robin). */

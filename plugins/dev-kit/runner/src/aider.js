@@ -29,6 +29,9 @@ export function aiderArgs(tier, taskPath) {
     "--no-suggest-shell-commands",
     "--no-pretty",
     "--analytics-disable",
+    // Commits carry the machine's git identity, not "Name (aider)".
+    "--no-attribute-author",
+    "--no-attribute-committer",
     "--read",
     taskPath,
     "--message",

@@ -7,7 +7,7 @@
  * carries it as `> Machine: karel`, and each runner takes only its own.
  *
  * A file with no `> Machine:` line is *unaddressed* ("Auto" on the card): any
- * runner may take it, after claiming it with a pushed `> Machine:` line of its own
+ * runner may take it, after claiming its Kanban card
  * (claim.js) so it never double-runs.
  */
 

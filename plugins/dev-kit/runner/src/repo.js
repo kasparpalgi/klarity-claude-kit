@@ -67,8 +67,16 @@ export async function commitTaskDir(cwd, taskDir, message) {
  * rename to `-DONE`, and commit. Only ever called on a clean tree, so there is
  * no half-done work to lose; the queue slot closes instead of re-running the
  * same already-finished task three times and parking it. Returns the -DONE name.
+ *
+ * `note` replaces that Results note and `message` the commit subject — a pull
+ * request repo finishes the file this way once the task's PR has merged (pr.js).
  */
-export async function autoFinish(cwd, taskDir, filename, moved) {
+export async function autoFinish(
+  cwd,
+  taskDir,
+  filename,
+  { moved = false, note, message } = {},
+) {
   const done = filename.replace(/-TODO\.md$/i, "-DONE.md");
   const path = join(cwd, taskDir, filename);
   const text = readFileSync(path, "utf8");
@@ -76,16 +84,22 @@ export async function autoFinish(cwd, taskDir, filename, moved) {
     writeFileSync(
       path,
       text.replace(/\s*$/, "") +
-        "\n\n## Results\n\nThe agent finished the run but never renamed the file, " +
-        "so the runner completed it. The tree was clean" +
-        (moved
-          ? " and the agent's commits are in"
-          : " with nothing left to commit") +
-        " — see the `.log` beside this file for the full session.\n",
+        "\n\n## Results\n\n" +
+        (note ??
+          "The agent finished the run but never renamed the file, " +
+            "so the runner completed it. The tree was clean" +
+            (moved
+              ? " and the agent's commits are in"
+              : " with nothing left to commit") +
+            " — see the `.log` beside this file for the full session.") +
+        "\n",
     );
   renameSync(path, join(cwd, taskDir, done));
   await git(["add", "-A", "--", taskDir], cwd);
-  await git(["commit", "-m", `docs(todo): finish ${done} (runner)`], cwd);
+  await git(
+    ["commit", "-m", message ?? `docs(todo): finish ${done} (runner)`],
+    cwd,
+  );
   return done;
 }
 

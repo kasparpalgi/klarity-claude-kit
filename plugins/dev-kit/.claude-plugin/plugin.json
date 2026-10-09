@@ -1,7 +1,7 @@
 {
   "name": "dev-kit",
   "description": "Markdown-file-driven task workflow: /todo, /plan, /verify, /cross-review, research-first, debug, plus Exa web search MCP.",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "author": {
     "name": "Kaspar L. Palgi"
   }

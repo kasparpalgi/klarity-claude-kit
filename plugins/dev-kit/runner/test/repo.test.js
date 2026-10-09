@@ -68,7 +68,7 @@ function repoWithTask(name, body) {
 
 test("autoFinish renames -TODO to -DONE, records a note, and leaves a clean tree", async () => {
   const { path } = repoWithTask("171-x-TODO.md", "# X\n\nOriginal.\n");
-  const done = await autoFinish(path, "doc/todo", "171-x-TODO.md", false);
+  const done = await autoFinish(path, "doc/todo", "171-x-TODO.md");
 
   assert.equal(done, "171-x-DONE.md");
   assert.ok(!existsSync(join(path, "doc/todo/171-x-TODO.md")));
@@ -83,7 +83,7 @@ test("autoFinish renames -TODO to -DONE, records a note, and leaves a clean tree
 test("autoFinish keeps the agent's own Results instead of appending its own", async () => {
   const body = "# X\n\n## Results\n\nAgent wrote this.\n";
   const { path } = repoWithTask("172-x-TODO.md", body);
-  await autoFinish(path, "doc/todo", "172-x-TODO.md", true);
+  await autoFinish(path, "doc/todo", "172-x-TODO.md", { moved: true });
 
   const text = readFileSync(join(path, "doc/todo/172-x-DONE.md"), "utf8");
   assert.match(text, /Agent wrote this\./);

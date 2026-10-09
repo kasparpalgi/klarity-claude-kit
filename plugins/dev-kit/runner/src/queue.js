@@ -11,6 +11,7 @@
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { issueOf } from "./issue.js";
 import { machineOf } from "./machine.js";
 import { notify } from "./notify.js";
 import * as state from "./state.js";
@@ -31,8 +32,21 @@ export const numberOf = (name) => /^(\d+)-/.exec(name)?.[1] ?? null;
 /** `019-task012Fix` — a task's identity across its -TODO/-DONE/-BLOCKED lives. */
 export const stemOf = (name) => name.replace(/-(TODO|DONE|BLOCKED)\.md$/i, "");
 
-/** Every NNN-*-TODO.md with no -DONE/-BLOCKED sibling of its own, lowest number first. */
-export function listPending(repoPath, dir) {
+/** `> After: #78, #80` — the PRs or issues that must land before this task may run. */
+export const afterOf = (text) =>
+  [
+    ...(/^[ \t]*>[ \t]*after:(.*)$/im
+      .exec(text ?? "")?.[1]
+      .matchAll(/#(\d+)/g) ?? []),
+  ].map((m) => m[1]);
+
+/**
+ * Every NNN-*-TODO.md with no -DONE/-BLOCKED sibling of its own, lowest number first.
+ * `skip(task)` drops a task that is already in flight — in a pull request repo, one
+ * whose PR is open: its file stays `-TODO` on the base branch until that PR merges,
+ * and without the skip every tick would run it again.
+ */
+export function listPending(repoPath, dir, skip = () => false) {
   let entries;
   try {
     entries = readdirSync(join(repoPath, dir), { withFileTypes: true });
@@ -48,17 +62,21 @@ export function listPending(repoPath, dir) {
     .sort((a, b) => Number(numberOf(a)) - Number(numberOf(b)))
     .map((name) => {
       const path = join(repoPath, dir, name);
-      // The owning machine is read here, alongside the stat, so nothing
-      // downstream has to open the file a second time.
+      // What the runner needs from the file is read here, alongside the stat, so
+      // nothing downstream has to open it a second time.
+      const text = readFileSync(path, "utf8");
       return {
         name,
         number: numberOf(name),
         stem: stemOf(name),
         path,
-        machine: machineOf(readFileSync(path, "utf8")),
+        machine: machineOf(text),
+        issue: issueOf(text),
+        after: afterOf(text),
         mtime: statSync(path).mtimeMs,
       };
-    });
+    })
+    .filter((task) => !skip(task));
 }
 
 /** The `-BLOCKED.md` this stem ended as, if it did — the agent's half is finished. */

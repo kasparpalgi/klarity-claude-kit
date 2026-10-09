@@ -101,7 +101,8 @@ Then rename the file to describe itself: `008-aiWorkflow-DONE.md` (complete) or
 `008-aiWorkflow-BLOCKED.md` (your half is done, a human owns the rest). Never leave it
 `-TODO.md` — that is the one name that means "nobody has run this yet".
 
-Bump `package.json` version — PATCH for fixes, MINOR for features.
+Bump `package.json` version — PATCH for fixes, MINOR for features — unless the project's
+`CLAUDE.md` says CI stamps it (a pull-request repo usually does).
 
 ## 7. Ship
 
@@ -111,14 +112,23 @@ Only when verification is green:
 git pull && git add -A && git commit -m "<conventional commit subject>" && git push origin main
 ```
 
+**Pull-request repos never take that push.** When the project's `CLAUDE.md` says every
+change is a pull request — or the runner started you on a `todo/<NNN>-<slug>` branch in a
+worktree of its own — commit on that branch (stay on it; do not switch to `main`),
+`git push -u origin HEAD`, and open the PR the way the project's `CLAUDE.md` says
+(`gh pr create`, a draft when it calls the change important). The renamed task file
+rides in the PR, and the task is done when the PR merges, not when you exit. Whatever
+you leave uncommitted, the runner commits to your branch and puts in a **draft** PR,
+which then waits for a review — so commit your own work.
+
 The task file's number **is** its GitHub issue number, and the file says so near the top
 (`_GitHub issue #165_`). When it does, end the commit subject with ` (#165)` — GitHub then
 shows the commit on the issue, and closing the issue shows the work:
 `fix(extension): correct icon sizes (#165)`.
 
 Respect the project `CLAUDE.md`: if it says not to commit, stop after step 6 and report.
-Commit on the repo's base branch unless its `CLAUDE.md` asks for a task branch — the
-runner pushes a task branch and hands it back to a human instead of continuing.
+Commit on the repo's base branch unless its `CLAUDE.md` asks for a task branch or a pull
+request — then the branch and its PR are the delivery, as above.
 
 ## 8. Self-check before you claim success
 

@@ -123,8 +123,11 @@ test("a finished task whose card still points at its -TODO is stuck; a redo or a
   writeFileSync(join(dir, "035-sessions-TODO.md"), card(d));
   writeFileSync(join(dir, "036-handWritten-DONE.md"), "# no card");
 
-  const byCard = finishedCards(dir);
+  const { byCard, byPath } = finishedCards(dir, "doc/todo");
   assert.equal(byCard.size, 3);
+  assert.deepEqual([...byPath], [
+    ["doc/todo/036-handWritten-TODO.md", "036-handWritten-DONE.md"],
+  ]);
   const todo = { name: "Todo" };
   const todos = [
     { id: a, list: todo, task_file_path: "doc/todo/034-manageGigs-TODO.md" },

@@ -67,6 +67,14 @@ export const BOARD = `query B($repo: String!) {
   }
 }`;
 
+// Every card filed for a path, oldest first: the first one in is the lock (followup.js,
+// claim.js) and a racing runner drops its own.
+export const CARDS_AT = `query A($path: String!) {
+  todos(where: {task_file_path: {_eq: $path}}, order_by: [{created_at: asc}, {id: asc}]) { id }
+}`;
+export const NEW_CARD = `mutation N($o: todos_insert_input!) { insert_todos_one(object: $o) { id } }`;
+export const DROP = `mutation D($id: uuid!) { delete_todos_by_pk(id: $id) { id } }`;
+
 // The card ends where the task file ends: move it to Review and point it at the -DONE
 // file. The Results go into a comment only — the card body stays the original request.
 const MOVE = `mutation M($id: uuid!, $list: uuid!, $path: String!) {
@@ -123,7 +131,11 @@ export async function closeLoop(
   const out = await reportToIssue({ repoName, text, body, blocked });
 
   if (!kanban?.endpoint || !kanban?.adminSecret) return out;
-  const id = cardIdOf(text);
+  // A card the runner adopted for a card-less file (claim.js) is found by its path.
+  const id =
+    cardIdOf(text) ??
+    (await gql(kanban, CARDS_AT_PATHS, { paths: [`${dir}/${stem}-TODO.md`] }))
+      .todos[0]?.id;
   if (!id) return [...out, `no card id in ${done} — no card to close`];
 
   const { boards } = await gql(kanban, BOARD, { repo: `%${repoName}%` });
@@ -165,15 +177,26 @@ const CARDS = `query C($ids: [uuid!]!) {
   todos(where: {id: {_in: $ids}}) { id task_file_path list { name } }
 }`;
 
-/** Card id → its -DONE/-BLOCKED file, for every finished task file in `full`. */
-export function finishedCards(full) {
+const CARDS_AT_PATHS = `query P($paths: [String!]!) {
+  todos(where: {task_file_path: {_in: $paths}}, order_by: [{created_at: asc}, {id: asc}]) {
+    id task_file_path list { name }
+  }
+}`;
+
+/**
+ * Card id → its -DONE/-BLOCKED file, for every finished task file in `full`, and
+ * the `-TODO` path → finished file for those that name no card.
+ */
+export function finishedCards(full, dir = "") {
   const byCard = new Map();
+  const byPath = new Map();
   for (const n of readdirSync(full)) {
     if (!/-(DONE|BLOCKED)\.md$/i.test(n)) continue;
     const id = cardIdOf(readFileSync(join(full, n), "utf8"));
     if (id) byCard.set(id, n);
+    else byPath.set(`${dir}/${stemOf(n)}-TODO.md`, n);
   }
-  return byCard;
+  return { byCard, byPath };
 }
 
 /**
@@ -202,9 +225,19 @@ export function stuckCards(todos, byCard, lists) {
  */
 export async function reconcileCards(kanban, { repoName, repoPath, dir }) {
   if (!kanban?.endpoint || !kanban?.adminSecret) return [];
-  const byCard = finishedCards(join(repoPath, dir));
-  if (!byCard.size) return [];
-  const { todos } = await gql(kanban, CARDS, { ids: [...byCard.keys()] });
+  const { byCard, byPath } = finishedCards(join(repoPath, dir), dir);
+  const todos = byCard.size
+    ? (await gql(kanban, CARDS, { ids: [...byCard.keys()] })).todos
+    : [];
+  // Cards the runner adopted for card-less files (claim.js) still point at the -TODO.
+  if (byPath.size)
+    for (const t of (
+      await gql(kanban, CARDS_AT_PATHS, { paths: [...byPath.keys()] })
+    ).todos) {
+      if (byCard.has(t.id)) continue;
+      byCard.set(t.id, byPath.get(t.task_file_path));
+      todos.push(t);
+    }
   const out = [];
   for (const name of stuckCards(todos, byCard, kanban.lists)) {
     const lines = await closeLoop(kanban, {

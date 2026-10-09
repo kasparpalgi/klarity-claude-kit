@@ -297,6 +297,7 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 | `onboardMinutes` | how often the daemon adopts newly connected boards (default 5; `0` turns it off) |
 | `seo`            | repos (`"owner/repo"`) that also get the claude-seo plugin — landing / marketing sites only. A board gets it too with `"seo": true` in its `github` JSON. For an already-onboarded repo, add it here and run `npm run onboard -- --all` |
 | `peers`          | host → this runner's folder on it; `npm run onboard` repeats itself there over ssh, and the sweep pushes secrets there. Omit on the peer |
+| `pullRequests`   | repos (`"owner/repo"`) where every change is a pull request — see below. Only a repo whose CI merges green PRs by itself belongs here, or its tasks never finish |
 
 ## Secrets on the peers
 
@@ -345,11 +346,16 @@ Each runner sets its own id in `config.json` and takes only the tasks addressed 
 ```
 
 A file with **no** `> Machine:` line is unaddressed — "Auto" on the card. Any runner
-may take it, but claims it first: it writes its own `> Machine:` line, commits, pushes
-and sets the card's machine. A push is atomic, so when two runners race exactly one
-lands; the loser drops its commit and pulls the winner's line (`src/claim.js`). Auto
-used to mean "the Mac only" (`machineDefault`, now ignored), so an Auto card sat in
-TODO on Dell and Karel whenever the Mac was busy or off.
+may take it, but claims it first, in the Kanban: it sets the
+card's machine compare-and-swap (the update matches only while the field is empty or
+already its own), so when two runners race exactly one gets its row back. A task with
+no card of its own — a failure CI filed, a review task an agent wrote — is adopted as a
+TODO card first; the first card in for its path wins, as follow-ups are filed
+(`src/claim.js`). A card deleted since the file was written is adopted anew, not read
+as another runner's claim. With no Kanban to lock with (none configured, or no TODO list
+on the repo's board) the claim is a pushed `chore(todo): claim NNN for karel` commit that
+adds the `> Machine:` line, as before tektok-app's task 184: a push is atomic, and it
+touches only the task file, which is bookkeeping even in a pull request repo.
 
 `machine` also accepts a list (`["karel", "karel-ubuntu"]`) so a board label spelled
 differently than the config still lands. A task addressed to a name **no** runner
@@ -359,6 +365,42 @@ belongs elsewhere.
 
 Setting `machine` on a single-runner setup is optional; unset means "the only machine
 there is", which is what every existing install keeps doing.
+
+## Pull-request repos
+
+A repo in `pullRequests` never gets code from the runner on its base branch:
+
+1. **Each task runs in its own worktree** — `~/.kanban-runner/worktrees/<repo>/<stem>`, on
+   branch `todo/<stem>`, from a fresh `origin/main` (or from `origin/todo/<stem>` when an
+   earlier attempt pushed one, or from the local branch when it holds that and more). The
+   tree gets the clone's gitignored secrets and, with a
+   lockfile, `npm ci`. The clone itself stays on `main`, so two sessions never share a tree.
+2. **When the session ends**, anything it left uncommitted is committed to its branch, the
+   branch is pushed, and if the agent opened no PR the runner opens a **draft** (a ready
+   PR that received leftovers outside the task folder is turned back into a draft and gets
+   a new `codeReviewPr<N>` task). A session that changed only its task file is bookkeeping
+   and lands on `main` directly; one that changed nothing is finished there as before. A
+   session that ended off any branch is put back on `todo/<stem>` only when that keeps the
+   branch's commits and adds none of another branch's; otherwise the worktree is left for
+   a person.
+3. **The task is done when its PR merges.** Until then the file stays `-TODO` on `main` and
+   `listPending()` skips it: a PR carries a task when its branch is `todo/<stem>`, it says
+   `Closes #NNN` for the file's own issue, it renames the task file to `-DONE`, or the
+   session ended on it (a review or gate fix works on another PR's branch). Once merged, a
+   task still `-TODO` on `main` is renamed `-DONE` there, unless the merge is older than
+   the task file. So is a `codeReview` task that came in with the merge of the PR it
+   names. The reconcile sweep closes the card.
+4. **Every tick looks at the open PRs from `todo/*` and `claude/*`** (one `gh` round a
+   minute). A draft older than 15 minutes with no `codeReview` task naming it gets
+   `NNN-codeReviewPr<N>-TODO.md`; a ready, green PR without `hold` still open 30 minutes
+   after its last check gets `NNN-mergeStuckPr<N>-TODO.md` — the merge job failed — once
+   per green run, so a finished one that did not unstick it is not filed again. Red
+   gates and refused merges are CI's to file (`NNN-gateFailurePr<N>-TODO.md`).
+5. **`> After: #78`** under the tier line holds a task until #78 is a merged PR or a closed
+   issue: a session starts from `main` and cannot see work that has not landed.
+
+Every session starts with `--settings ~/.kanban-runner/session.json`, which turns off
+Claude's commit and PR attribution lines; commits carry the machine's git identity.
 
 ## Model & effort
 
@@ -453,6 +495,8 @@ silent no-op and nothing else changes.
 | `Runner ⏸ needs you` | the agent is blocked on a prompt — answer it in the relay PWA |
 | `Runner ⛔ blocked` / `Runner ▶ unblocked` | a repo stopped / resumed being processable |
 | `Runner ↗ task on a branch` | work was left on a task branch, pushed, waiting for your merge |
+| `Runner ⇄ PR` / `Runner ✘ → draft PR` | a pull-request repo's session ended on its PR — opened by the agent, or as a draft by the runner (after a failure, with what the session left) |
+| `Runner ✘ branch did not ship` / `Runner ✘ no worktree` | a task branch would not push, or its worktree would not open; the work stays in the worktree |
 | `Runner ⚠ did not finish` | the agent stopped without renaming the file or committing |
 | `Runner ⏭ stuck task` | two runs, no `-DONE` rename; the task is skipped |
 | `Runner ＋ new repo` | a newly connected board was cloned, scaffolded and is now watched |
@@ -476,7 +520,9 @@ silent no-op and nothing else changes.
 | `src/scaffold.js`| one clone → plugin enabled, task folder, CLAUDE.md, dependencies |
 | `src/trust.js`   | pre-answer Claude's folder-trust dialog in `~/.claude.json` |
 | `src/followup.js`| new follow-up file → GitHub issue → Backlog card, file renamed to the issue number |
-| `src/claim.js`   | claim an Auto (unaddressed) task with a pushed `> Machine:` line before running it |
+| `src/claim.js`   | claim an Auto (unaddressed) task on its Kanban card before running it |
+| `src/worktree.js`| pull-request repos: a task's own branch and worktree, and shipping it as a PR |
+| `src/pr.js`      | pull-request repos: what is in flight, finishing merged tasks, the review / stuck-merge sweep, `> After:` |
 | `src/notify.js`  | Pushbullet |
 
 ## Notes

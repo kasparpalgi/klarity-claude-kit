@@ -346,6 +346,7 @@ async function runRepo(repoName, repoPath) {
   let code,
     output,
     started = true,
+    live = false,
     retriedStart = false,
     waitingOnLimit = false;
   for (;;) {
@@ -358,7 +359,7 @@ async function runRepo(repoName, repoPath) {
       dir,
       tier: activeTier,
     });
-    ({ code, output } = r);
+    ({ code, output, live } = r);
     started = r.started !== false;
     // A pane that never registered an agent means the task never ran: herdr
     // lost the tab, or its shell was not up yet when the agent started. Both
@@ -395,6 +396,14 @@ async function runRepo(repoName, repoPath) {
       `↓ ${filename} — usage limit at ${activeTier.label}, dropping to ${cheaper.label}`,
     );
     activeTier = cheaper;
+  }
+  // Only our wait ended: the pane still works or waits on a human. Finishing now
+  // closed the worktree under a live session (#60). Leave it, like the re-claim
+  // guard does, and give the attempt back; a later tick picks it up once it ends.
+  if (code && live) {
+    state.addTry(repoName, taskStem, mtime, -1);
+    log(`… ${filename} — still running in its pane, left alone`);
+    return true;
   }
   let { stdout: after } = await git(["rev-parse", "HEAD"], cwd);
 

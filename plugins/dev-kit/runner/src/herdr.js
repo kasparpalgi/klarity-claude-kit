@@ -227,10 +227,14 @@ export async function runInHerdr(opts) {
       );
     }
     const stuck = agent.agent_status === "blocked";
-    return { code: stuck ? 1 : 0, output: await readPane(name), started };
+    if (!stuck) return { code: 0, output: await readPane(name), started };
+    return { code: 1, output: await readPane(name), started, live: true };
   } catch (err) {
     // A herdr timeout or CLI error is a stuck run, not a crash: keep the log.
-    return { code: 1, output: await readPane(name), err: err.message, started };
+    // Our wait running out is not the agent stopping — `live` says it still
+    // works or waits on a human, so run.js must not close its worktree (#60).
+    const live = await paneLive(name);
+    return { code: 1, output: await readPane(name), err: err.message, started, live };
   }
   // Deliberately no `finally` close: the pane stays open at the shell prompt so
   // a human can type a follow-up and close it themselves. The next run's reap()

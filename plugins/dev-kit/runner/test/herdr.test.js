@@ -114,3 +114,21 @@ test("reap spares a live task pane and closes a finished one", async () => {
   assert.equal(await paneLive("task-034"), true);
   assert.equal(await paneLive("task-032"), false);
 });
+
+test("a pane still working past taskMs is reported live, so run.js leaves its worktree (#60)", async () => {
+  const tabs = JSON.stringify({
+    tabs: [{ label: "task-001", tab_id: "t1", agent_status: "working" }],
+  });
+  fakeHerdr(`"tab list") echo '${ok(tabs)}' ;;
+"agent prompt") ${fail("timeout")} ;;`);
+  const r = await run();
+  assert.equal(r.code, 1);
+  assert.equal(r.live, true);
+});
+
+test("a wait that fails with the pane gone is a finished run, not a live one", async () => {
+  fakeHerdr(`"agent prompt") ${fail("timeout")} ;;`);
+  const r = await run();
+  assert.equal(r.code, 1);
+  assert.equal(r.live, false);
+});

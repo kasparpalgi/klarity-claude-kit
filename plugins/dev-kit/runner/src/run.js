@@ -189,8 +189,27 @@ async function reconcile(repoName, repoPath, dir) {
 /** `repo#stem` → task-file mtime, for tasks whose card another runner holds. */
 const theirs = new Map();
 
+/**
+ * `repo#stem` → a session left running in its pane (#60). Its transcript stops
+ * growing before the task's next run starts, so that run's clock never finds it:
+ * record its usage here, once the pane has ended.
+ */
+const leftAlone = new Map();
+
+async function recordLeftAlone(repoName) {
+  for (const [key, run] of leftAlone) {
+    if (!key.startsWith(`${repoName}#`) || (await paneLive(run.pane))) continue;
+    leftAlone.delete(key);
+    const spent = await recordUsage(cfg.kanban, run).catch(
+      (err) => `usage: not recorded — ${err.message}`,
+    );
+    if (spent) log(`  ${key} ${spent}`);
+  }
+}
+
 async function runRepo(repoName, repoPath) {
   const dir = todoDir(repoPath);
+  await recordLeftAlone(repoName);
   const {
     reason,
     kind,
@@ -402,6 +421,13 @@ async function runRepo(repoName, repoPath) {
   // guard does, and give the attempt back; a later tick picks it up once it ends.
   if (code && live) {
     state.addTry(repoName, taskStem, mtime, -1);
+    leftAlone.set(`${repoName}#${taskStem}`, {
+      pane: `task-${number}`,
+      repoName,
+      repoPath: cwd,
+      todoId: cardIdOf(content),
+      sinceMs: runStartMs,
+    });
     log(`… ${filename} — still running in its pane, left alone`);
     return true;
   }

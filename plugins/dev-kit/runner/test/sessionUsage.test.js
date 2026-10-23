@@ -104,7 +104,7 @@ test("findSessionFile takes the newest transcript touched by the run", () => {
   writeFileSync(join(dir, "old.jsonl"), "{}");
   const old = Date.now() / 1000 - 3600;
   utimesSync(join(dir, "old.jsonl"), old, old);
-  const since = Date.now() - 1;
+  const since = Date.now() - 1000; // file mtimes tick coarser than Date.now()
   writeFileSync(join(dir, "new.jsonl"), "{}");
   writeFileSync(join(dir, "ignored.txt"), "{}");
   assert.equal(findSessionFile(dir, since), join(dir, "new.jsonl"));

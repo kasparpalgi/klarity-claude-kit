@@ -92,6 +92,22 @@ export function blockedFile(repoPath, dir, stem) {
   }
 }
 
+/**
+ * True once this stem has a `-DONE.md` or `-BLOCKED.md` — the run's own word that it
+ * finished. A missing `-TODO` is not that: a review session that switches its worktree
+ * to the PR under review checks out a branch older than the task file, and reading that
+ * as "done" closed the worktree under a CI watch (tektok-app 385).
+ */
+export function retired(repoPath, dir, stem) {
+  try {
+    return readdirSync(join(repoPath, dir)).some(
+      (n) => /-(DONE|BLOCKED)\.md$/i.test(n) && stemOf(n) === stem,
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Two attempts on the same unchanged file is enough: announce once, move on. */
 export async function pick(repoName, pending) {
   for (const task of pending) {

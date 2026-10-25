@@ -31,7 +31,14 @@ import {
   autoFinish,
   baseBranch,
 } from "./repo.js";
-import { blockedFile, listPending, pick, stemOf, todoDir } from "./queue.js";
+import {
+  blockedFile,
+  listPending,
+  pick,
+  retired,
+  stemOf,
+  todoDir,
+} from "./queue.js";
 import { machineFilter, machineOf, mine, myName } from "./machine.js";
 import { claim } from "./claim.js";
 import { issueOf } from "./issue.js";
@@ -142,7 +149,7 @@ async function runTask({
         ? [...model, "--dangerously-skip-permissions"]
         : [...model, "--permission-mode", "acceptEdits"],
       taskMs: cfg.taskMinutes * 60000,
-      done: () => !listPending(cwd, dir).some((p) => p.name === filename),
+      done: () => retired(cwd, dir, stemOf(filename)),
       blockedMs: cfg.blockedMinutes * 60000,
       onBlocked: (pane) =>
         notify(

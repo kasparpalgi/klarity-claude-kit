@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { blockedFile, listPending, numberOf } from "../src/queue.js";
+import { blockedFile, listPending, numberOf, retired } from "../src/queue.js";
 
 /** A throwaway repo whose task folder holds exactly `names`. */
 function repo(names) {
@@ -45,6 +45,19 @@ test("names the -BLOCKED file a task ended as, not a namesake's", () => {
   assert.equal(blockedFile(path, ".", "165-a"), "165-a-BLOCKED.md");
   assert.equal(blockedFile(path, ".", "165-b"), null);
   assert.equal(blockedFile(path, ".", "166-c"), null);
+});
+
+test("a task is retired by its own -DONE or -BLOCKED, not by a missing -TODO", () => {
+  const path = repo([
+    "165-a-DONE.md",
+    "166-b-BLOCKED.md",
+    "167-c-TODO.md",
+    "16-a-DONE.md",
+  ]);
+  assert.equal(retired(path, ".", "165-a"), true);
+  assert.equal(retired(path, ".", "166-b"), true);
+  assert.equal(retired(path, ".", "167-c"), false);
+  assert.equal(retired(path, ".", "385-review"), false);
 });
 
 test("listPending includes stem for each task", () => {

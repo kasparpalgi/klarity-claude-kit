@@ -58,7 +58,8 @@ machine pushed:
   "codeRoot": "~/Documents/GitHub",
   "peers": {
     "karel": "~/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner",
-    "dell": "~/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner"
+    "dell": "~/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner",
+    "winwsl": "~/Documents/GitHub/klarity-claude-kit/plugins/dev-kit/runner"
   }
 }
 ```
@@ -342,6 +343,7 @@ Each runner sets its own id in `config.json` and takes only the tasks addressed 
 ```json
 { "machine": "karel" }                        // Karel, an Ubuntu box
 { "machine": "dell" }                         // Dell (servo), the other Ubuntu box
+{ "machine": ["windows", "win", "karel2"] }   // WSL2 on the Windows PC (karel2)
 { "machine": "mac" }                         // this Mac
 ```
 

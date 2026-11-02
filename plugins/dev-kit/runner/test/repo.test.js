@@ -43,6 +43,16 @@ test("parkDirty stashes a run's leftover so the tree goes clean", async () => {
   assert.deepEqual(await dirtyPaths(path), []); // preflight would now pass
 });
 
+test("untracked macOS ._ sidecars are not dirt, but real files beside them are", async () => {
+  const { path } = repo();
+  mkdirSync(join(path, "sub"));
+  writeFileSync(join(path, "._.env"), "x");
+  writeFileSync(join(path, "sub", "._a.txt"), "x"); // a folder of only junk too
+  assert.deepEqual(await dirtyPaths(path), []);
+  writeFileSync(join(path, "sub", "b.txt"), "x");
+  assert.deepEqual(await dirtyPaths(path), ["sub/b.txt"]);
+});
+
 test("parkDirty is a no-op on a clean tree", async () => {
   const { path } = repo();
   assert.equal(await parkDirty(path, "167-x-TODO.md"), null);

@@ -23,13 +23,20 @@ const ok = (args, cwd) =>
     () => false,
   );
 
-/** Paths from `git status --porcelain`, rename targets included. */
+/** An untracked macOS AppleDouble sidecar (`._.env`), left by copying from a Mac. */
+const appleDouble = (l) => /^\?\? "?(.*\/)?\._[^/]*"?$/.test(l);
+
+/**
+ * Paths from `git status --porcelain`, rename targets included. Untracked
+ * `._*` files are metadata junk, not work, so they never count as dirt: one
+ * stray `._.env` otherwise parks a repo's whole queue (svelte-hasura-boilerplate#63).
+ */
 export async function dirtyPaths(cwd) {
   // No trim(): the status prefix is exactly 3 columns, leading space included.
-  const { stdout } = await git(["status", "--porcelain"], cwd);
+  const { stdout } = await git(["status", "--porcelain", "-uall"], cwd);
   return stdout
     .split("\n")
-    .filter(Boolean)
+    .filter((l) => l && !appleDouble(l))
     .map((l) => l.slice(3).split(" -> ").pop().replace(/^"|"$/g, ""));
 }
 

@@ -15,6 +15,7 @@ import {
   fileReview,
   finishMerged,
   greenSince,
+  lostFinish,
   nextNumber,
   prOf,
   sweepPrs,
@@ -345,4 +346,28 @@ test("a PR turned back into a draft gets a review of its own, which the sweep th
     }),
     [],
   );
+});
+
+test("losing the race to finish a merged PR says the queue is stale", async () => {
+  const { dell, karel, run } = setup();
+  const merged = [
+    { number: 90, headRefName: "claude/abc", body: "Closes #78", files: [] },
+  ];
+  const finish = (repoPath, pending) =>
+    finishMerged({
+      repoPath,
+      dir: DIR,
+      pending,
+      merged,
+      handedTo: () => null,
+    });
+  // Karel read its queue before Dell pushed, as two runners do on the same tick.
+  const stale = listPending(karel, DIR);
+  const won = await finish(dell, listPending(dell, DIR));
+  assert.equal(lostFinish(won), false);
+  const before = run(karel, "rev-parse", "HEAD");
+  const lost = await finish(karel, stale);
+  assert.match(lost[0], /another runner finished it first/);
+  assert.equal(lostFinish(lost), true);
+  assert.equal(run(karel, "rev-parse", "HEAD"), before, "HEAD alone cannot tell");
 });

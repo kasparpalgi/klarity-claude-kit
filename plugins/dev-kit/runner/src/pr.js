@@ -111,6 +111,15 @@ async function fileTask(repoPath, dir, name, body, message) {
   return pushOrDrop(repoPath);
 }
 
+const LOST_FINISH = "another runner finished it first";
+
+/**
+ * True when `finishMerged` lost a race. Its commit was dropped, so HEAD looks unchanged,
+ * but this clone's queue is stale: the task still reads -TODO and its PR is no longer
+ * open, which makes it look runnable (tektok-app 440 ran again this way).
+ */
+export const lostFinish = (lines) => lines.some((l) => l.endsWith(LOST_FINISH));
+
 /** Push HEAD; on a lost race drop our one commit and let the next pull bring theirs. */
 async function pushOrDrop(repoPath) {
   try {
@@ -172,7 +181,7 @@ export async function finishMerged({
     out.push(
       (await pushOrDrop(repoPath))
         ? `${done} — #${pr.number} merged`
-        : `${task.name} — another runner finished it first`,
+        : `${task.name} — ${LOST_FINISH}`,
     );
   }
   return out;

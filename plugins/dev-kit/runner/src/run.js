@@ -47,6 +47,7 @@ import {
   fileReview,
   finishMerged,
   forget,
+  lostFinish,
   prOf,
   prs,
   sweepPrs,
@@ -271,7 +272,7 @@ async function runRepo(repoName, repoPath) {
     ];
     for (const line of lines) log(`  ${repoName} ⇄ ${line}`);
     // The task folder moved under us: look again on the next tick.
-    if ((await head()) !== was) return false;
+    if ((await head()) !== was || lostFinish(lines)) return false;
   }
   const pending = viaPr
     ? listPending(repoPath, dir, (t) =>

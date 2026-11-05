@@ -46,6 +46,21 @@ Either way it reads every connected, unarchived board and does the rest:
 | Installs dependencies | Fresh clones only, by lockfile: pnpm / bun / yarn / `npm ci` / `uv sync` / `go mod download` / `cargo fetch`. `--no-install` skips it |
 | Commits and pushes all of it | An untracked file outside the task folder is a dirty tree to preflight, which would block the repo forever. The commit is path-scoped, so a repo mid-edit keeps its own work out of it |
 
+## Archive or delete a project
+
+Archive the board, or delete it. On its next sweep every daemon drops the repo from
+its own `config.json` and deletes its clone, and the phone gets `Runner － repo removed`.
+A clone that holds work found nowhere else is left on disk and only unwatched:
+uncommitted changes, commits on no remote, a stash, an open worktree. Its gitignored
+secrets (`.env*`, `hasura/config.yaml`, `.secrets/`) are first copied to
+`~/.kanban-runner/archived/<owner>__<repo>/`.
+
+Restoring the board from the archive is the reverse, with nothing to do: the repo is no
+longer in `config.json`, so onboarding treats it as new, clones it again and puts the
+saved secrets back. A deleted board leaves no row to read, so the runner remembers which
+repos had a live board on its last sweep (`boarded` in `state.json`). A repo you added
+to `config.json` by hand, with no board, is never removed.
+
 The automatic sweep is this machine only: Karel watches the same boards and adopts
 them itself, so an ssh pass from inside its tick loop would only duplicate the work.
 The hand-run command still drives the peers in `config.json` over ssh — the peer pulls
@@ -502,6 +517,7 @@ silent no-op and nothing else changes.
 | `Runner ⚠ did not finish` | the agent stopped without renaming the file or committing |
 | `Runner ⏭ stuck task` | two runs, no `-DONE` rename; the task is skipped |
 | `Runner ＋ new repo` | a newly connected board was cloned, scaffolded and is now watched |
+| `Runner － repo removed` | the repo's board was archived or deleted: no longer watched, clone deleted (or kept, with the reason) |
 | `Runner ⚠ cannot onboard` | a connected board's repo would not clone or scaffold — said once, not every sweep |
 
 ## Files
@@ -519,6 +535,7 @@ silent no-op and nothing else changes.
 | `src/selfUpdate.js` | fast-forward the runner's own checkout so both machines run the same code |
 | `src/secrets.js` | gitignored secrets → the peers, on the sweep's clock; `npm run sync-secrets` by hand |
 | `src/onboard.js` | connected boards → clones, `config.json` entries, the peer machine. The daemon calls it on a timer |
+| `src/offboard.js` | archived or deleted boards → `config.json` entry and clone removed, secrets kept for a restore |
 | `src/scaffold.js`| one clone → plugin enabled, task folder, CLAUDE.md, dependencies |
 | `src/trust.js`   | pre-answer Claude's folder-trust dialog in `~/.claude.json` |
 | `src/followup.js`| new follow-up file → GitHub issue → Backlog card, file renamed to the issue number |

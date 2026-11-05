@@ -14,7 +14,15 @@
 
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { loadConfig } from "./config.js";
@@ -68,6 +76,30 @@ export async function secretsOf(dir) {
         .digest("hex"),
     ]),
   );
+}
+
+/** A removed clone's secrets, waiting for its board to come back (#65). The Mac is the source peers copy from. */
+export const savedSecretsOf = (repo) =>
+  join(
+    process.env.KANBAN_RUNNER_ARCHIVE ??
+      join(homedir(), ".kanban-runner", "archived"),
+    repo.toLowerCase().replace("/", "__"),
+  );
+
+/** Copy the clone's secrets aside before it is deleted. Returns how many. */
+export async function saveSecrets(repo, dir) {
+  const files = Object.keys(await secretsOf(dir));
+  for (const f of files) cpSync(join(dir, f), join(savedSecretsOf(repo), f));
+  return files.length;
+}
+
+/** Put them back into a fresh clone of a restored board, once. */
+export function restoreSecrets(repo, dir) {
+  const saved = savedSecretsOf(repo);
+  if (!existsSync(saved)) return false;
+  cpSync(saved, dir, { recursive: true });
+  rmSync(saved, { recursive: true, force: true });
+  return true;
 }
 
 /**

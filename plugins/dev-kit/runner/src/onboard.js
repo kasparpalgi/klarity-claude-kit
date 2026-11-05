@@ -26,6 +26,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { gql } from "./kanban.js";
 import { scaffold } from "./scaffold.js";
+import { restoreSecrets } from "./secrets.js";
 
 const exec = promisify(execFile);
 const HERE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -203,7 +204,11 @@ export async function onboard({
     for (const w of r.warnings) log(`  ⚠ ${w}`);
     // `landed` is what the config gained, so a dry run lands nothing by definition.
     if (r.failed) failed.push({ ...entry, why: r.warnings[0] ?? "scaffold failed" });
-    else if (entry.isNew && !dryRun) landed.push({ ...entry, stack: r.stack });
+    else if (entry.isNew && !dryRun) {
+      // A board back from the archive gets the `.env` its old clone left behind.
+      if (restoreSecrets(entry.repo, expand(entry.dir))) log("  ✔ secrets restored");
+      landed.push({ ...entry, stack: r.stack });
+    }
   }
 
   if (dryRun) {

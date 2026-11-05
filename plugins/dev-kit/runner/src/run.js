@@ -60,6 +60,7 @@ import {
 } from "./worktree.js";
 import { fileFollowUps } from "./followup.js";
 import { onboard } from "./onboard.js";
+import { offboard } from "./offboard.js";
 import { selfUpdate } from "./selfUpdate.js";
 import { syncSecrets } from "./secrets.js";
 import { trustProject } from "./trust.js";
@@ -742,6 +743,7 @@ async function sweepBoards() {
     return;
   if (Date.now() < nextSweepMs) return;
   nextSweepMs = Date.now() + cfg.onboardMinutes * 60000;
+  await retire();
   const r = await onboard({ peers: false, log }).catch((err) => {
     log("board sweep failed:", err.message);
     return null;
@@ -765,6 +767,24 @@ async function sweepBoards() {
         `${e.repo} (board: ${e.board})\n\n${e.why}`,
       );
     announced.add(e.repo);
+  }
+}
+
+/** Archived or deleted boards: drop the repo here, and its clone unless it holds work (#65). */
+async function retire() {
+  const out = await offboard().catch((err) => {
+    log("board retire failed:", err.message);
+    return [];
+  });
+  for (const { repo, dir, kept } of out) {
+    delete cfg.repos[repo]; // this tick must not preflight a clone that just went
+    log(
+      `－ ${repo} → ${dir} — ${kept ? `unwatched, clone kept: ${kept}` : "removed"}`,
+    );
+    await notify(
+      "Runner － repo removed",
+      `${repo} — its board is archived or deleted\n\n${kept ? `${dir} kept: ${kept}` : `${dir} deleted`}`,
+    );
   }
 }
 
@@ -849,6 +869,10 @@ async function check() {
       });
       const waiting = todo.map((t) => `${t.repo} → ${t.dir}`).join(", ");
       log(`boards: ${boards.length} connected; ${waiting || "all onboarded"}`);
+      for (const g of await offboard({ dryRun: true }))
+        log(
+          `boards: ${g.repo} is archived/deleted → ${g.kept ? `unwatch, keep clone (${g.kept})` : `remove ${g.dir}`}`,
+        );
     } catch (err) {
       log(`boards: could not read them — ${err.message}`);
     }

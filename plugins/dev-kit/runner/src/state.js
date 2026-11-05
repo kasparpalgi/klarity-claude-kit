@@ -18,6 +18,7 @@ const EMPTY = {
   handed: {},
   cooldownUntil: 0,
   lastRepo: null,
+  boarded: [],
 };
 
 function read() {
@@ -146,6 +147,19 @@ export function setCooldown(untilMs) {
 export function cooldownUntil() {
   const until = read().cooldownUntil || 0;
   return until > Date.now() ? until : 0;
+}
+
+/**
+ * Repos a live board pointed at on the last sweep. A deleted board leaves no row
+ * behind, so this is the only way to tell "its board was deleted" from "added by
+ * hand, never had one" (#65).
+ */
+export const boarded = () => read().boarded ?? [];
+
+export function setBoarded(repos) {
+  const s = read();
+  s.boarded = repos;
+  write(s);
 }
 
 export const snapshot = () => read();

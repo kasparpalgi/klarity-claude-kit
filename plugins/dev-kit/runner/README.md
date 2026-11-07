@@ -103,7 +103,7 @@ self-healed or announced exactly once, on the edge.
 | State | What the runner does |
 | ----- | -------------------- |
 | Dirt only inside the task folder | Commits it as `chore(todo): checkpoint uncommitted agent output` and carries on — that is a half-finished agent run, not your work |
-| Dirt anywhere else | Skips the repo and sends **⛔ blocked** listing the paths. Silent on every later tick; **▶ unblocked** when the tree is clean again |
+| Dirt anywhere else | Skips the repo and sends **⛔ blocked** listing the paths. Silent on every later tick, except **⛔ task waiting** once for each new task origin queues for this machine meanwhile (it fetches, never pulls); **▶ unblocked** when the tree is clean again |
 | On a task branch with unpushed commits | Pushes the branch, returns to the base branch, sends **↗ task on a branch**. Nothing is lost and the queue keeps moving; you merge when ready |
 | On a task branch already merged | Silently returns to the base branch |
 | Detached HEAD, unreachable origin, diverged base | Skips with **⛔ blocked** naming which one |
@@ -511,6 +511,7 @@ silent no-op and nothing else changes.
 | `Runner ✔` / `Runner ✘` | a task finished / exited non-zero |
 | `Runner ⏸ needs you` | the agent is blocked on a prompt — answer it in the relay PWA |
 | `Runner ⛔ blocked` / `Runner ▶ unblocked` | a repo stopped / resumed being processable |
+| `Runner ⛔ task waiting` | a new task for this machine landed on origin while its repo is blocked |
 | `Runner ↗ task on a branch` | work was left on a task branch, pushed, waiting for your merge |
 | `Runner ⇄ PR` / `Runner ✘ → draft PR` | a pull-request repo's session ended on its PR — opened by the agent, or as a draft by the runner (after a failure, with what the session left) |
 | `Runner ✘ branch did not ship` / `Runner ✘ no worktree` | a task branch would not push, or its worktree would not open; the work stays in the worktree |
@@ -536,6 +537,7 @@ silent no-op and nothing else changes.
 | `src/secrets.js` | gitignored secrets → the peers, on the sweep's clock; `npm run sync-secrets` by hand |
 | `src/onboard.js` | connected boards → clones, `config.json` entries, the peer machine. The daemon calls it on a timer |
 | `src/offboard.js` | archived or deleted boards → `config.json` entry and clone removed, secrets kept for a restore |
+| `src/waiting.js` | tasks on origin that a blocked clone cannot see yet, so the human hears about each one |
 | `src/scaffold.js`| one clone → plugin enabled, task folder, CLAUDE.md, dependencies |
 | `src/trust.js`   | pre-answer Claude's folder-trust dialog in `~/.claude.json` |
 | `src/followup.js`| new follow-up file → GitHub issue → Backlog card, file renamed to the issue number |

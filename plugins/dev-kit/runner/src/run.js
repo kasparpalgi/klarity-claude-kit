@@ -40,6 +40,7 @@ import {
   todoDir,
 } from "./queue.js";
 import { machineFilter, machineOf, mine, myName } from "./machine.js";
+import { waitingOnOrigin } from "./waiting.js";
 import { claim } from "./claim.js";
 import { issueOf } from "./issue.js";
 import { cardIdOf, closeLoop, reconcileCards, titleOf } from "./kanban.js";
@@ -216,6 +217,23 @@ async function recordLeftAlone(repoName) {
   }
 }
 
+/** `repo#task` already pinged as waiting behind its repo's block (#66). */
+const pinged = new Set();
+
+async function announceWaiting(repoName, repoPath, dir, kind, reason) {
+  if (kind === "fetch" || kind === "missing") return;
+  const tasks = await waitingOnOrigin(repoPath, dir, machineFilter(cfg));
+  for (const name of tasks) {
+    if (pinged.has(`${repoName}#${name}`)) continue;
+    pinged.add(`${repoName}#${name}`);
+    log(`  ${repoName}: ${name} is waiting behind the block`);
+    await notify(
+      "Runner ⛔ task waiting",
+      `${repoName} ${name} cannot start on ${myName(cfg) ?? "this machine"}:\n\n${reason}`,
+    );
+  }
+}
+
 async function runRepo(repoName, repoPath) {
   const dir = todoDir(repoPath);
   await recordLeftAlone(repoName);
@@ -234,6 +252,7 @@ async function runRepo(repoName, repoPath) {
     log(`skip ${repoName} — ${reason}`);
     if (state.setBlocked(repoName, kind ?? reason))
       await notify("Runner ⛔ blocked", `${repoName}\n\n${reason}`);
+    await announceWaiting(repoName, repoPath, dir, kind, reason);
     return false;
   }
   for (const n of notes) log(`  ${repoName}: ${n}`);

@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { classify, downgrade, explicitTier } from "./classify.js";
+import { classify, explicitTier } from "./classify.js";
 import { usageLimitHit } from "./usage.js";
 import { aiderArgs, aiderFailed, excludeAiderFiles } from "./aider.js";
 import { herdrUp, paneLive, runInHerdr } from "./herdr.js";
@@ -75,10 +75,17 @@ const interactive = process.argv.includes("--interactive");
 // timezone, and a UTC prefix here reads as "off by my offset" (task-018).
 const clock = (ms = Date.now()) =>
   new Date(ms).toLocaleTimeString("en-GB", { hour12: false });
+// With its zone ("08/11/2026, 00:11 EET"): a machine on UTC must not read as the
+// CLI's own "resets 12:10am (Europe/Tallinn)" being off by the offset.
 const stamp = (ms) =>
   new Date(ms).toLocaleString("en-GB", {
-    dateStyle: "short",
-    timeStyle: "short",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "short",
   });
 const log = (...args) => console.log(clock(), ...args);
 
@@ -386,10 +393,6 @@ async function runRepo(repoName, repoPath) {
   // only handle we get on "the file this run wrote" is the clock (#21 step 1).
   const runStartMs = Date.now();
 
-  // The CLI only tells us the usage wall was hit after the fact. A cheaper
-  // tier spends the budget slower, so try stepping down before giving up and
-  // waiting for the reset — same task, same tick.
-  let activeTier = tier;
   let code,
     output,
     started = true,
@@ -404,7 +407,7 @@ async function runRepo(repoName, repoPath) {
       repoPath,
       cwd,
       dir,
-      tier: activeTier,
+      tier,
     });
     ({ code, output, live } = r);
     started = r.started !== false;
@@ -418,31 +421,29 @@ async function runRepo(repoName, repoPath) {
       log(`  ${filename} — no agent in the pane, retrying once`);
       continue;
     }
-    // Gemini via aider is not on the Claude budget; its output is not the CLI's.
-    const limit = activeTier.engine ? null : usageLimitHit(output);
-    if (!limit) break;
-    const cheaper = downgrade(activeTier);
-    if (!cheaper) {
-      state.setCooldown(limit.untilMs);
-      // Hitting the usage wall is the account's state, not this task's fault —
-      // give back the attempt we took at line ~139 so a run that started with
-      // ~no budget left (task-018) doesn't count toward the 3-strikes skip.
-      state.addTry(repoName, taskStem, mtime, -1);
-      const until = stamp(limit.untilMs);
-      log(
-        `⏳ ${filename} — usage limit at ${activeTier.label}, waiting until ${until}`,
-      );
-      await notify(
-        "Runner ⏳ usage limit",
-        `${repoName} ${filename}\n\nWaiting until ${until}`,
-      );
-      waitingOnLimit = true;
-      break;
-    }
+    break;
+  }
+  // The CLI only says the usage wall was hit after the fact. The 5-hour and the
+  // weekly wall cover every model and effort, so a cheaper tier meets the same
+  // wall within seconds: server 026 burned three panes on it, tekdok 466 five,
+  // and the fifth stalled herdr. Stop every repo until the reset instead.
+  // Gemini via aider is not on the Claude budget; its output is not the CLI's.
+  const limit = tier.engine ? null : usageLimitHit(output);
+  if (limit) {
+    state.setCooldown(limit.untilMs);
+    // Hitting the usage wall is the account's state, not this task's fault —
+    // give back the attempt we took at line ~139 so a run that started with
+    // ~no budget left (task-018) doesn't count toward the 3-strikes skip.
+    state.addTry(repoName, taskStem, mtime, -1);
+    const until = stamp(limit.untilMs);
     log(
-      `↓ ${filename} — usage limit at ${activeTier.label}, dropping to ${cheaper.label}`,
+      `⏳ ${filename} — usage limit at ${tier.label}, waiting until ${until}`,
     );
-    activeTier = cheaper;
+    await notify(
+      "Runner ⏳ usage limit",
+      `${repoName} ${filename}\n\nWaiting until ${until}`,
+    );
+    waitingOnLimit = true;
   }
   // Only our wait ended: the pane still works or waits on a human. Finishing now
   // closed the worktree under a live session (#60). Leave it, like the re-claim
@@ -507,7 +508,7 @@ async function runRepo(repoName, repoPath) {
             ? `exit ${code}`
             : "the agent never started in its pane",
       output,
-      tier: activeTier,
+      tier,
     });
 
   if (code !== 0) {
@@ -576,7 +577,7 @@ async function runRepo(repoName, repoPath) {
     renamed,
     moved: after.trim() !== before.trim(),
     output,
-    tier: activeTier,
+    tier,
   });
 }
 
@@ -631,8 +632,7 @@ async function closeOut({
   }).catch((err) => [`kanban: ${err.message}`]);
   for (const line of closed) log(`  ${line}`);
 
-  // Name the tier that actually ran: the requested one, or a cheaper one the
-  // usage-limit path silently stepped down to — the only place the phone sees it.
+  // Name the tier that ran — the only place the phone sees it.
   await notify(
     blocked ? "Runner ⇥ over to you" : "Runner ✔",
     `${repoName} ${blocked ?? filename} · ${tier.label}\n${closed.join("\n")}\n\n${tail(output)}`,

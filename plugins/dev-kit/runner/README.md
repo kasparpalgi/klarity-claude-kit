@@ -469,7 +469,7 @@ chosen from the board rather than typed.
 `/todo`, so it gets the task file read-only, edits and auto-commits; the runner's
 autoFinish writes Results and the `-DONE` rename. Effort above `high` is capped there.
 aider exits 0 even when the API rejected every call, so a litellm error in its output
-counts as a failed run. Meant for simple tasks; it never steps down on usage limits.
+counts as a failed run. Meant for simple tasks; its output is never read as a Claude usage limit.
 
 Per machine, once: `uv tool install aider-chat` and `GEMINI_API_KEY=…` (free key from
 aistudio.google.com) in `~/.config/kanban-runner.env`.
@@ -478,18 +478,22 @@ aistudio.google.com) in `~/.config/kanban-runner.env`.
 
 There's no API for the runner to ask "how much session is left" ahead of time — it only
 finds out when the CLI itself says the wall was hit. When a run's output shows that, the
-runner steps the tier down one notch (`src/classify.js`'s `downgrade`: effort first, then
-family) and retries the same task immediately, since a cheaper tier spends the usage
-budget slower. Once it's already at `haiku / low` and still hits the wall, it stops
-retrying and waits: every repo sits idle until the reset time recorded in
-`src/state.js`'s `cooldownUntil`. That moment comes from the CLI's own message — the
-headless `| <epoch>`, or the human `resets 5:40pm (Europe/Tallinn)` wording an
-interactive/herdr-pane run prints (`src/usage.js` turns the clock time + IANA zone into
-the exact instant). Only a limit message with no time at all falls back to a fixed wait
-(5h session, 7 days weekly). Because the wall is the account's state and not the task's
-fault, the attempt it consumed is given back, so a run that started with almost no budget
-left doesn't count toward the 3-strikes skip. `--check` and the `Runner ⏳ usage limit`
-notification both surface that timestamp, in local time.
+runner stops: every repo sits idle until the reset time recorded in `src/state.js`'s
+`cooldownUntil`. It does not retry at a cheaper tier, because the 5-hour and weekly walls
+cover every model and effort alike, so a cheaper tier only meets the same wall within
+seconds (server 026, tekdok 466). The reset moment comes from the CLI's own message — the
+headless `| <epoch>`, or the `resets 12:10am (Europe/Tallinn)` wording an interactive/herdr-pane
+run prints. `src/usage.js` turns that clock time and zone into the exact instant. Any zone
+Intl knows counts, a bare `UTC` too. The day is whichever puts the time nearest now, so
+12:10am read at 23:08 means 62 minutes from now, and the zone's offset is read at the reset
+itself, so a DST change in between cannot shift it an hour. The runner waits one minute past
+the stated minute. A reset that has already passed (the wall still up after it) is looked at
+again in 15 minutes, not the same time tomorrow. Only a limit message with no time or an
+unknown zone falls back to a fixed wait (5h session, 7 days weekly). Because the wall is the
+account's state and not the task's fault, the attempt it consumed is given back, so a run that
+started with almost no budget left doesn't count toward the 3-strikes skip. The log, `--check`
+and the `Runner ⏳ usage limit` notification show that moment in the machine's local time,
+with its zone (`08/11/2026, 00:11 EET`).
 
 ## CLI flags
 

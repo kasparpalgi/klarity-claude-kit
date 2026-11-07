@@ -60,34 +60,6 @@ const FAMILIES = {
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
-/** Cheapest to priciest; fable is never auto-picked, so it never appears here. */
-const FAMILY_ORDER = ["haiku", "sonnet", "opus"];
-
-/**
- * One notch cheaper: drop effort first, then family. `null` once already at
- * haiku/low — that's the runner's signal to stop trying and wait for reset.
- * Gemini is not on the Claude usage budget, so it never steps down.
- */
-export function downgrade(current) {
-  if (current.engine) return null;
-  const family = Object.entries(FAMILIES).find(([, f]) =>
-    Object.values(f.versions).includes(current.model),
-  )?.[0];
-  const effortIdx = EFFORTS.indexOf(current.effort);
-  if (effortIdx > 0) {
-    const effort = EFFORTS[effortIdx - 1];
-    return {
-      model: current.model,
-      effort,
-      label: `${FAMILIES[family].name} / ${effort}`,
-    };
-  }
-
-  const famIdx = FAMILY_ORDER.indexOf(family);
-  if (famIdx <= 0) return null;
-  return tier(FAMILY_ORDER[famIdx - 1]);
-}
-
 /** `tier("sonnet", "4.6", "low")` -> `claude-sonnet-4-6` / low / "Sonnet 4.6 / low". */
 function tier(family, version, effort) {
   const f = FAMILIES[family];

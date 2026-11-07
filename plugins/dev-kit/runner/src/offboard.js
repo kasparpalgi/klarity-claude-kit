@@ -13,6 +13,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { canonicalName, matchName, resolver } from "./canonical.js";
 import { gql } from "./kanban.js";
 import { repoOf } from "./onboard.js";
 import { dirtyPaths, git } from "./repo.js";
@@ -91,6 +92,7 @@ export async function offboard({
   configPath = CONFIG,
   boards,
   dryRun = false,
+  lookup = canonicalName,
 } = {}) {
   const file = JSON.parse(readFileSync(configPath, "utf8"));
   boards ??= (
@@ -101,7 +103,13 @@ export async function offboard({
   ).boards;
   const repos = file.repos ?? {};
   const out = [];
+  const name = resolver(lookup);
+  const live = liveRepos(boards);
   for (const repo of gone(repos, boards, state.boarded())) {
+    // A board moved to the repo's new name is not a retired board: this entry only
+    // needs its name updating, which onboarding does, and the clone holds the `.env`.
+    const canon = await name(repo);
+    if (canon && (await matchName(live, canon, name))) continue;
     const dir = expand(repos[repo]);
     const kept = existsSync(dir) ? await whyKeep(dir) : null;
     out.push({ repo, dir: repos[repo], kept });
@@ -113,7 +121,6 @@ export async function offboard({
     dropEntry(configPath, repo);
     state.clearBlocked(repo);
   }
-  const live = liveRepos(boards);
   if (!dryRun && live.length) state.setBoarded(live);
   return out;
 }

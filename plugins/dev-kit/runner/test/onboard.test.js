@@ -144,7 +144,7 @@ test("onboard --dry-run plans the missing board and writes no config", async () 
   const { root, path } = fixture([
     { name: "Kirjanduse Selts", github: '{"full_name":"kasparpalgi/kirjanduse-selts"}', client_id: "c1" },
   ]);
-  const r = await onboard({ configPath: path, dryRun: true, peers: false, log: () => {} });
+  const r = await onboard({ configPath: path, dryRun: true, peers: false, log: () => {}, lookup: async (x) => x });
   assert.deepEqual(
     r.todo.map((t) => [t.repo, t.dir, t.isNew]),
     [["kasparpalgi/kirjanduse-selts", `${root}/customers/kirjanduse-selts`, true]],

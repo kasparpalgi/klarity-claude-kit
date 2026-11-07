@@ -24,6 +24,14 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import {
+  canonicalName,
+  matchName,
+  renameInConfig,
+  resolver,
+  retargetBoard,
+  same,
+} from "./canonical.js";
 import { gql } from "./kanban.js";
 import { scaffold } from "./scaffold.js";
 import { restoreSecrets } from "./secrets.js";
@@ -37,7 +45,7 @@ const CONFIG = process.env.KANBAN_RUNNER_CONFIG ?? join(HERE, "config.json");
 const BOARDS = `query { boards(
   where: {github: {_is_null: false}, archived_at: {_is_null: true}}
   order_by: {name: asc}
-) { name github client_id } }`;
+) { id name github client_id } }`;
 
 /** A board opts its repo into claude-seo with `"seo": true` in its github JSON. */
 export function seoOf(github) {
@@ -92,33 +100,38 @@ export function originOf(dir) {
   }
 }
 
+/** Every clone under the code root, with the `owner/repo` its origin names. */
+function clones(root, depth = 3) {
+  if (depth < 0) return [];
+  let entries;
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries.flatMap((e) => {
+    if (!e.isDirectory() || e.name.startsWith(".")) return [];
+    const dir = join(root, e.name);
+    // A clone is a leaf: `customers/life-effect/` holds two, `customers/job` is one.
+    const origin = originOf(dir);
+    return origin ? [{ dir, origin }] : clones(dir, depth - 1);
+  });
+}
+
 /**
  * The clone this repo already has, two levels under the code root. The convention
  * says where a *new* repo goes; it cannot know that `ezy-iot` was filed under
  * `ezy/` or that LifeEffect's board never got its client set. Cloning a second copy
  * beside the one being worked in is the worst outcome here, so origin decides.
  */
-export function findClone(root, repo, depth = 3) {
-  const want = repo.toLowerCase();
-  if (depth < 0) return null;
-  let entries;
-  try {
-    entries = readdirSync(root, { withFileTypes: true });
-  } catch {
-    return null;
-  }
-  for (const e of entries) {
-    if (!e.isDirectory() || e.name.startsWith(".")) continue;
-    const dir = join(root, e.name);
-    // A clone is a leaf: `customers/life-effect/` holds two, `customers/job` is one.
-    const origin = originOf(dir);
-    if (origin) {
-      if (origin.toLowerCase() === want) return dir;
-      continue;
-    }
-    const found = findClone(dir, repo, depth - 1);
-    if (found) return found;
-  }
+export function findClone(root, repo) {
+  return clones(root).find((c) => same(c.origin, repo))?.dir ?? null;
+}
+
+/** Same, for an origin saved under another name: only GitHub can tell (#55). */
+async function findRenamedClone(root, canon, name) {
+  for (const { dir, origin } of clones(root))
+    if (same(await name(origin), canon)) return dir;
   return null;
 }
 
@@ -127,6 +140,33 @@ const expand = (dir) =>
 
 /** Config paths stay `~`-relative: the two machines have different home dirs. */
 const tilde = (abs) => (abs.startsWith(homedir()) ? "~" + abs.slice(homedir().length) : abs);
+
+/**
+ * Where a board's repo lives, under its current name. `key` is the config entry it
+ * already has, whatever name that was saved under. GitHub not knowing the repo leaves
+ * the board's own name, and scaffolding reports the failed clone.
+ */
+async function locate(e, repos, root, name) {
+  const canon = await name(e.repo);
+  const repo = canon ?? e.repo;
+  const names = Object.keys(repos);
+  const key = canon
+    ? await matchName(names, canon, name)
+    : (names.find((n) => same(n, repo)) ?? null);
+  const found = key
+    ? repos[key]
+    : (findClone(expand(root), repo) ??
+      (canon ? await findRenamedClone(expand(root), canon, name) : null));
+  return {
+    ...e,
+    repo,
+    boardRepo: e.repo,
+    key,
+    dir: found ? tilde(found) : dirFor(repo, e.hasClient, root),
+    found: Boolean(found),
+    isNew: !key,
+  };
+}
 
 /** Add the entries, keeping the file's own shape — it holds the admin secret. */
 function addRepos(path, added) {
@@ -161,35 +201,49 @@ export async function onboard({
   args = [],
   log = console.log,
   verbose = false,
+  lookup = canonicalName,
 } = {}) {
   const file = JSON.parse(readFileSync(configPath, "utf8"));
   const root = file.codeRoot ?? "~/Documents/GitHub";
-  const { boards } = await gql(
-    { endpoint: file.endpoint, adminSecret: file.adminSecret },
-    BOARDS,
-  );
+  const kanban = { endpoint: file.endpoint, adminSecret: file.adminSecret };
+  const { boards } = await gql(kanban, BOARDS);
 
   // `missing({})` is every connected board, deduped — one repo, two boards, one entry.
   const repos = file.repos ?? {};
-  const pathOf = (repo) =>
-    Object.entries(repos).find(([r]) => r.toLowerCase() === repo.toLowerCase())?.[1];
-  const todo = missing(all ? {} : repos, boards).map((e) => {
-    const configured = pathOf(e.repo);
-    const found = configured ?? findClone(expand(root), e.repo);
-    return {
-      ...e,
-      dir: found ? tilde(found) : dirFor(e.repo, e.hasClient, root),
-      found: Boolean(found),
-      isNew: !configured,
-    };
-  });
+  const name = resolver(lookup);
+  const todo = [];
+  const failed = [];
+  for (const e of missing(all ? {} : repos, boards)) {
+    let entry;
+    try {
+      entry = await locate(e, repos, root, name);
+    } catch (err) {
+      // Not knowing is no reason to clone: the next sweep asks again.
+      failed.push({ ...e, why: err.message });
+      continue;
+    }
+    if (!dryRun && entry.key && !same(entry.key, entry.repo)) {
+      renameInConfig(configPath, entry.key, entry.repo);
+      repos[entry.repo] = repos[entry.key];
+      delete repos[entry.key];
+      log(`${entry.key} is now ${entry.repo} — config.json updated`);
+    }
+    if (!dryRun && !same(entry.boardRepo, entry.repo))
+      for (const b of boards.filter((b) => same(repoOf(b.github), entry.boardRepo)))
+        await retargetBoard(kanban, b, entry.repo).then(
+          () => log(`board ${b.name} now points at ${entry.repo}`),
+          (err) => log(`  ⚠ board ${b.name} still says ${entry.boardRepo}: ${err.message}`),
+        );
+    // Two boards can name one repo under its old name and its new one.
+    if ((all || entry.isNew) && !todo.some((t) => same(t.repo, entry.repo)))
+      todo.push(entry);
+  }
   if (verbose)
     log(
       `${boards.length} connected board(s); ${todo.length} ${all ? "to re-check" : `not in ${configPath.replace(homedir(), "~")}`}`,
     );
 
   const landed = [];
-  const failed = [];
   for (const entry of todo) {
     log(
       `onboarding ${entry.repo} (board: ${entry.board}) → ${entry.dir}${entry.found ? "  [existing clone]" : ""}`,

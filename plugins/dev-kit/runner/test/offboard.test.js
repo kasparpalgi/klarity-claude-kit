@@ -98,11 +98,11 @@ test("offboard(): deletes the clone, keeps its secrets for a restore, drops the 
     board("a/gone-by-hand", "2026-10-26"),
   ];
 
-  const dry = await offboard({ configPath, boards, dryRun: true });
+  const dry = await offboard({ configPath, boards, dryRun: true, lookup: async () => null });
   assert.equal(dry.length, 2);
   assert.ok(existsSync(dir), "a dry run deletes nothing");
 
-  const out = await offboard({ configPath, boards });
+  const out = await offboard({ configPath, boards, lookup: async () => null });
   assert.deepEqual(
     out.map((o) => [o.repo, o.kept]),
     [
@@ -138,6 +138,7 @@ test("offboard(): a clone with unpushed work is unwatched but left on disk", asy
   const out = await offboard({
     configPath,
     boards: [board("a/live"), board("a/busy", "2026-11-01")],
+    lookup: async () => null,
   });
   assert.match(out[0].kept, /uncommitted/);
   assert.ok(existsSync(join(dir, "notes.md")));

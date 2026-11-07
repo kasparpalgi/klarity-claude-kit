@@ -38,13 +38,20 @@ Either way it reads every connected, unarchived board and does the rest:
 
 | It does | How it decides |
 | ------- | -------------- |
-| Finds the clone, or makes one | An existing checkout whose `origin` is that repo wins, wherever it was filed. Otherwise `gh repo clone` into `customers/<repo>` when the board has a client, `<repo>` when it does not |
+| Finds the clone, or makes one | An existing checkout whose `origin` is that repo wins, wherever it was filed, and under any name GitHub redirects to it. Otherwise `gh repo clone` into `customers/<repo>` when the board has a client, `<repo>` when it does not |
 | Adds it to `config.json` | Only repos not already listed — a hand-placed path like `ezy/ezy-iot` is never rewritten. The daemon reloads the file each tick, so there is nothing to restart |
 | Enables `dev-kit@klarity` for the repo | Merged into the repo's own `.claude/settings.json`, keeping whatever is already in it |
 | Gives it a task folder | `doc/todo/`, unless the repo already keeps one at `.claude/todo/` |
 | Writes a `CLAUDE.md` stub | Only when there is none: the repo, the detected stack, and the `/plan` → `/todo` → `/verify` table |
 | Installs dependencies | Fresh clones only, by lockfile: pnpm / bun / yarn / `npm ci` / `uv sync` / `go mod download` / `cargo fetch`. `--no-install` skips it |
 | Commits and pushes all of it | An untracked file outside the task folder is a dirty tree to preflight, which would block the repo forever. The commit is path-scoped, so a repo mid-edit keeps its own work out of it |
+
+A repo renamed or transferred on GitHub stays one repo. `gh api repos/<owner>/<repo>`
+gives its current name, and the board, the `config.json` entry (with `pullRequests` and
+`seo`) and the clone are all matched on that name, so the existing clone is adopted. A
+board or entry still holding the old name is updated to the new one. If GitHub cannot be
+asked, the sweep neither clones nor removes anything, and the phone gets
+`Runner ⚠ cannot onboard`.
 
 ## Archive or delete a project
 

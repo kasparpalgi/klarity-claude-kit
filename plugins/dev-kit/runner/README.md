@@ -241,6 +241,18 @@ brand-new id by days) costs 0 and is named in the log, and a run whose transcrip
 cannot be found is a log line, not a failure. Needs `endpoint`/`adminSecret` in
 `config.json`; without them the runner skips this entirely.
 
+### Live status on the card
+
+When a run starts the runner posts **one** comment on its card —
+`▶ Running on dell since 14:02 · Opus 5.5 / xhigh · attempt 1` — and edits that same
+comment (by id) as the run goes: `⏳ Waiting` at the usage wall, `⏸ Needs you` when the
+pane blocks, `✘ Failed` / `⚠ Did not finish`, and finally
+`■ Finished on dell 14:02–14:41 · … · $2.33` with the cost from `sessionUsage.js`. A
+retry takes over the comment its unfinished attempt left; a `■ Finished` one is kept, so
+a card sent back for rework gets a fresh line. The Results comment stays separate. The
+Kanban's `cardThread.ts` drops these prefixes (`STATUS` in `src/status.js`) when it
+carries the thread into a re-queued task file — change both together.
+
 ### Legacy: tmux + `--interactive`
 
 `--interactive` predates the herdr path: it drops `--dangerously-skip-permissions` and
@@ -546,6 +558,7 @@ silent no-op and nothing else changes.
 | `src/classify.js`| model + effort tier for a task file |
 | `src/pricing.js` | LiteLLM price list → `claude_model_pricing` rows |
 | `src/sessionUsage.js` | read a run's transcript → one `claude_usage` row |
+| `src/status.js`  | the run's one live status comment on its card, edited as it goes |
 | `src/selfUpdate.js` | fast-forward the runner's own checkout so both machines run the same code |
 | `src/secrets.js` | gitignored secrets → the peers, on the sweep's clock; `npm run sync-secrets` by hand |
 | `src/onboard.js` | connected boards → clones, `config.json` entries, the peer machine. The daemon calls it on a timer |

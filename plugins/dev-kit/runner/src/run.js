@@ -67,6 +67,7 @@ import { selfUpdate } from "./selfUpdate.js";
 import { syncSecrets } from "./secrets.js";
 import { trustProject } from "./trust.js";
 import { recordUsage } from "./sessionUsage.js";
+import { costIn, openStatus } from "./status.js";
 import * as state from "./state.js";
 
 let cfg = loadConfig();
@@ -133,6 +134,7 @@ async function runTask({
   cwd,
   dir,
   tier,
+  say,
 }) {
   if (tier.engine === "aider") {
     excludeAiderFiles(repoPath);
@@ -161,11 +163,13 @@ async function runTask({
       taskMs: cfg.taskMinutes * 60000,
       done: () => retired(cwd, dir, stemOf(filename)),
       blockedMs: cfg.blockedMinutes * 60000,
-      onBlocked: (pane) =>
-        notify(
+      onBlocked: async (pane) => {
+        await say("needs");
+        await notify(
           "Runner ⏸ needs you",
           `${repoName} ${filename}\n\n${tail(pane)}`,
-        ),
+        );
+      },
     });
     if (r.code) log(`  stuck in herdr${r.err ? `: ${r.err}` : " (blocked)"}`);
     return r;
@@ -375,6 +379,15 @@ async function runRepo(repoName, repoPath) {
   const tier = explicitTier(content) ?? (await classify(content.slice(0, 500)));
   const attempt = state.addTry(repoName, taskStem, mtime);
   log(`▶ ${repoName} ${filename} (${tier.label}, attempt ${attempt})`);
+  // On the card within this tick, edited as the run goes (#68).
+  const say = await openStatus(cfg.kanban, {
+    repoName,
+    todoId: cardIdOf(content),
+    machine: myName(cfg),
+    tier: tier.label,
+    attempt,
+    log,
+  });
 
   let cwd = repoPath;
   if (viaPr) {
@@ -383,6 +396,7 @@ async function runRepo(repoName, repoPath) {
     } catch (err) {
       const why = err.stderr?.trim() || err.message;
       log(`✘ ${filename} — no worktree: ${why}`);
+      await say("failed", { note: "no worktree" });
       await notify("Runner ✘ no worktree", `${repoName} ${filename}\n\n${why}`);
       return true;
     }
@@ -408,6 +422,7 @@ async function runRepo(repoName, repoPath) {
       cwd,
       dir,
       tier,
+      say,
     });
     ({ code, output, live } = r);
     started = r.started !== false;
@@ -444,6 +459,7 @@ async function runRepo(repoName, repoPath) {
       `${repoName} ${filename}\n\nWaiting until ${until}`,
     );
     waitingOnLimit = true;
+    await say("waiting", { note: `usage limit, back ${until}` });
   }
   // Only our wait ended: the pane still works or waits on a human. Finishing now
   // closed the worktree under a live session (#60). Leave it, like the re-claim
@@ -474,6 +490,7 @@ async function runRepo(repoName, repoPath) {
     sinceMs: runStartMs,
   }).catch((err) => `usage: not recorded — ${err.message}`);
   if (spent) log(`  ${spent}`);
+  const costUsd = costIn(spent);
   // The run almost certainly touched the task file; adopt that mtime as ours so
   // only a *human* edit reads as "try this again".
   const taskFile = join(repoPath, dir, filename);
@@ -492,7 +509,14 @@ async function runRepo(repoName, repoPath) {
   // A pull request repo keeps the worktree for the retry; the clone was never touched.
   if (waitingOnLimit) return true;
 
-  if (viaPr)
+  if (viaPr) {
+    const failed =
+      code === 0
+        ? null
+        : started
+          ? `exit ${code}`
+          : "the agent never started in its pane";
+    await say(failed ? "failed" : "finished", { costUsd, note: failed });
     return finishPrRun({
       repoName,
       repoPath,
@@ -501,15 +525,11 @@ async function runRepo(repoName, repoPath) {
       base,
       filename,
       content,
-      failed:
-        code === 0
-          ? null
-          : started
-            ? `exit ${code}`
-            : "the agent never started in its pane",
+      failed,
       output,
       tier,
     });
+  }
 
   if (code !== 0) {
     // Clear our own leftover dirt so a stuck run can't block the repo forever.
@@ -520,6 +540,7 @@ async function runRepo(repoName, repoPath) {
       ? `exit ${code}`
       : "the agent never started in its pane";
     log(`✘ ${filename} ${why}${parked ? " — parked leftover work" : ""}`);
+    await say("failed", { costUsd, note: why });
     await notify(
       "Runner ✘",
       `${repoName} ${filename} ${why}${parked ? "\n\nUncommitted work parked in a stash — `git stash pop` to recover." : ""}\n\n${tail(output)}`,
@@ -562,6 +583,7 @@ async function runRepo(repoName, repoPath) {
         : `uncommitted (could not park): ${left.slice(0, 6).join(", ")}`,
     ].filter(Boolean);
     log(`⚠ ${filename} — ran but did not finish: ${why.join("; ")}`);
+    await say("unfinished", { costUsd });
     await notify(
       "Runner ⚠ did not finish",
       `${repoName} ${filename}\n\n${why.join("\n")}\n\n${tail(output)}`,
@@ -569,6 +591,7 @@ async function runRepo(repoName, repoPath) {
     return true;
   }
 
+  await say("finished", { costUsd });
   return closeOut({
     repoName,
     repoPath,

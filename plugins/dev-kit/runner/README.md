@@ -441,6 +441,13 @@ A repo in `pullRequests` never gets code from the runner on its base branch:
    after its last check gets `NNN-mergeStuckPr<N>-TODO.md` — the merge job failed — once
    per green run, so a finished one that did not unstick it is not filed again. Red
    gates and refused merges are CI's to file (`NNN-gateFailurePr<N>-TODO.md`).
+   A `todo/*` PR where a person asked for changes — a "Request changes" review, or an
+   unresolved thread whose last human word came after the last push — gets
+   `NNN-reworkPr<N>-TODO.md` listing each point (one GraphQL round a minute). Its session
+   works on the PR's branch, pushes, and replies on every thread starting with
+   `<!-- runner-reply -->`, so its own answers never count as feedback. Bot comments and
+   resolved threads never count. It is filed once per review round: not while one for that
+   PR still waits to run, and not again for feedback a task already listed.
 5. **`> After: #78`** under the tier line holds a task until #78 is a merged PR or a closed
    issue: a session starts from `main` and cannot see work that has not landed.
 
@@ -578,6 +585,7 @@ silent no-op and nothing else changes.
 | `src/claim.js`   | claim an Auto (unaddressed) task on its Kanban card before running it |
 | `src/worktree.js`| pull-request repos: a task's own branch and worktree, and shipping it as a PR |
 | `src/pr.js`      | pull-request repos: what is in flight, finishing merged tasks, the review / stuck-merge sweep, `> After:` |
+| `src/rework.js`  | pull-request repos: a person's review comes back as a `reworkPr<N>` task |
 | `src/notify.js`  | Pushbullet |
 
 ## Notes

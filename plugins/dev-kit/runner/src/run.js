@@ -41,6 +41,7 @@ import {
 } from "./queue.js";
 import { machineFilter, machineOf, mine, myName } from "./machine.js";
 import { waitingOnOrigin } from "./waiting.js";
+import { feedback, sweepRework } from "./rework.js";
 import { claim } from "./claim.js";
 import { issueOf } from "./issue.js";
 import { cardIdOf, closeLoop, reconcileCards, titleOf } from "./kanban.js";
@@ -300,6 +301,9 @@ async function runRepo(repoName, repoPath) {
       ...(await sweepPrs({ repoPath, dir, base, open }).catch((err) => [
         `PR sweep: ${err.message}`,
       ])),
+      ...(await feedback(repoName)
+        .then((prs) => sweepRework({ repoPath, dir, prs, handedTo }))
+        .catch((err) => [`review sweep: ${err.message}`])),
     ];
     for (const line of lines) log(`  ${repoName} ⇄ ${line}`);
     // The task folder moved under us: look again on the next tick.

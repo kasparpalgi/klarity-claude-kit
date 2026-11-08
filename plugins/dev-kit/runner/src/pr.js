@@ -103,7 +103,7 @@ export function prOf(task, list, dir, handed = null) {
 }
 
 /** Commit one file under the task folder and push it; false when another runner won. */
-async function fileTask(repoPath, dir, name, body, message) {
+export async function fileTask(repoPath, dir, name, body, message) {
   const rel = join(dir, name);
   writeFileSync(join(repoPath, rel), body);
   await git(["add", "--", rel], repoPath);

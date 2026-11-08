@@ -399,6 +399,8 @@ A repo in `pullRequests` never gets code from the runner on its base branch:
    earlier attempt pushed one, or from the local branch when it holds that and more). The
    tree gets the clone's gitignored secrets and, with a
    lockfile, `npm ci`. The clone itself stays on `main`, so two sessions never share a tree.
+   The task's herdr pane opens only after `npm ci` finishes. On a slow link that can take
+   minutes, and the journal logs `npm ci in the new worktree` while it runs.
 2. **When the session ends**, anything it left uncommitted is committed to its branch, the
    branch is pushed, and if the agent opened no PR the runner opens a **draft** (a ready
    PR that received leftovers outside the task folder is turned back into a draft and gets

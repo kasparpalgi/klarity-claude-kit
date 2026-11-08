@@ -67,14 +67,21 @@ export async function openWorktree(repoPath, stem, base, log = () => {}) {
     mkdirSync(dirname(join(path, f)), { recursive: true });
     copyFileSync(join(repoPath, f), join(path, f));
   }
-  if (existsSync(join(path, "package-lock.json")))
+  // No pane exists until this returns, so say so: a slow link made tektok-app 465
+  // sit 7½ silent minutes here and read as "never started" (svelte-hasura-boilerplate#76).
+  if (existsSync(join(path, "package-lock.json"))) {
+    log(`  npm ci in the new worktree — the agent's pane opens after it`);
+    const t0 = Date.now();
     await run("npm", ["ci", "--prefer-offline", "--no-audit", "--no-fund"], {
       cwd: path,
       timeout: 15 * 60_000,
       maxBuffer: 1 << 26,
-    }).catch((err) =>
-      log(`  npm ci failed in the worktree: ${err.message.split("\n")[0]}`),
+    }).then(
+      () => log(`  npm ci took ${Math.round((Date.now() - t0) / 1000)}s`),
+      (err) =>
+        log(`  npm ci failed in the worktree: ${err.message.split("\n")[0]}`),
     );
+  }
   log(
     `  worktree ${path} on ${branch}${pushed ? " (continuing its pushed branch)" : ""}`,
   );

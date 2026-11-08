@@ -31,6 +31,13 @@ push. Other projects pick it up on `/plugin` update — no per-repo copies to ke
 | `research-first`   | by Claude | Look up docs before coding against an unfamiliar API |
 | `debug`            | by Claude | Root cause before fix (from superpowers)             |
 
+Three human checkpoints: **spec** (`/plan` → draft → TODO), **plan**, **code** (Review).
+`/plan` gives every task an `## Acceptance criteria` checklist, and `/todo` ticks each
+item in Results with its evidence. The plan checkpoint is opt-in: a `> Plan first` line
+under `> Run with:` (the card's *Plan first* box writes it) makes the first run write
+`## Plan` and end `-BLOCKED`. Comment on the card and move it back to approve; the second
+run builds the plan, with your comments in `## Card comments`.
+
 ## MCP servers
 
 `.mcp.json` ships the hosted [Exa](https://exa.ai) MCP (`web_search_exa`, `web_fetch_exa`)

@@ -28,6 +28,18 @@ No exit skips that.
 Find the task folder: use `.claude/todo/` if it exists, otherwise `doc/todo/`.
 Find the file whose name starts with `$ARGUMENTS` in that folder. Read it.
 
+**`> Plan first`** among the header lines (under `> Run with:`) means a person wants to
+approve the plan before any code exists:
+
+- **No `## Plan` section yet** → this is the planning run. Read the code, then append
+  `## Plan`: the approach, the files you will touch, the acceptance criteria you will
+  check, and any question only they can answer. Change nothing else — no code, no
+  version bump. Go to step 6 and end **`-BLOCKED.md`**, Results saying "approve the plan:
+  comment on the card, then move it back to the agent list".
+- **`## Plan` already there** → the person moved the card back, which is the approval.
+  Build that plan; `## Card comments` at the bottom holds their review, and where it
+  disagrees with the plan, the comments win. Then carry on from step 2 as usual.
+
 ## 2. Classify
 
 | The file is…                                        | Do this                                                                                                                                                                                                                 |
@@ -80,8 +92,14 @@ Append to the task file:
 **Summary** — what got built
 **Files changed** — created / modified / deleted
 **Verification** — status of each check
+**Acceptance criteria** — every `- [ ]` from the file's `## Acceptance criteria`, ticked
+`- [x]` with its evidence (test name, command output, screenshot path), or left `- [ ]`
+with why not
 **Deviations** — changes from the plan, or "None"
 ```
+
+Leave the criteria list at the top as written; the ticked copy lives in Results. A file
+with no `## Acceptance criteria` (older tasks, cards) skips that line.
 
 **Never skip this step**, including on the exits that do not feel like finishing:
 

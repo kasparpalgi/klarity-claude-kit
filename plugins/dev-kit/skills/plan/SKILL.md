@@ -42,12 +42,20 @@ $ARGUMENTS
 
 1.
 
+## Acceptance criteria
+
+- [ ] <observable outcome a reviewer can check — one per line, 2–5 total>
+
 ## Verification
 
 - [ ] `npm run check`
 - [ ] tests
 - [ ] browser-tested
 ```
+
+   Write the acceptance criteria as outcomes, not steps: "a guest sees the sign-in page",
+   not "add a redirect". `/todo` must tick every one with evidence, so each needs a way to
+   be checked — a test, a command, a screenshot.
 
 5. If the request is genuinely more than one session, split it instead of writing one giant
    file. Write the **first** slice as `<NNN>-<name>-TODO.md` — that is the one the runner

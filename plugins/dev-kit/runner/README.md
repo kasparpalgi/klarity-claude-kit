@@ -291,6 +291,13 @@ doubles as a lock: the first card in for a path wins and the others back off.
 Logs are gitignored: the first run in a repo commits `*.log` to the task folder's
 `.gitignore`, so transcripts never dirty the tree or reach the remote.
 
+**Screenshots ride to the card.** For a UI task `/verify` saves 1–3 screenshots as
+`<task dir>/NNN-slug-*.png`, gitignored the same way (`/[0-9]*-*.png`). When the card
+moves to Review, closeLoop posts them to the Kanban app's `/api/runner/upload`
+(`appUrl`, default `https://todzz.eu`, authenticated with `adminSecret`), which stores
+them like any card upload — the owner's R2 bucket, else the app's — and lists them on
+the card. A task with no screenshots closes exactly as before.
+
 **One task per tick.** The loop returns after the first task it runs, so repos queue
 naturally.
 
@@ -567,6 +574,7 @@ silent no-op and nothing else changes.
 | `src/scaffold.js`| one clone → plugin enabled, task folder, CLAUDE.md, dependencies |
 | `src/trust.js`   | pre-answer Claude's folder-trust dialog in `~/.claude.json` |
 | `src/followup.js`| new follow-up file → GitHub issue → Backlog card, file renamed to the issue number |
+| `src/screenshots.js` | a UI task's screenshots → attachments on its card |
 | `src/claim.js`   | claim an Auto (unaddressed) task on its Kanban card before running it |
 | `src/worktree.js`| pull-request repos: a task's own branch and worktree, and shipping it as a PR |
 | `src/pr.js`      | pull-request repos: what is in flight, finishing merged tasks, the review / stuck-merge sweep, `> After:` |

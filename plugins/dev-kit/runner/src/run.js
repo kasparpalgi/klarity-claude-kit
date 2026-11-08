@@ -44,6 +44,7 @@ import { waitingOnOrigin } from "./waiting.js";
 import { claim } from "./claim.js";
 import { issueOf } from "./issue.js";
 import { cardIdOf, closeLoop, reconcileCards, titleOf } from "./kanban.js";
+import { carryScreenshots } from "./screenshots.js";
 import {
   fileReview,
   finishMerged,
@@ -683,6 +684,8 @@ async function finishPrRun({
   tier,
 }) {
   const stem = stemOf(filename);
+  // The worktree goes once the branch ships; its screenshots stay for closeLoop.
+  carryScreenshots(join(cwd, dir), join(repoPath, dir), stem);
   let shipped;
   try {
     shipped = await shipBranch({

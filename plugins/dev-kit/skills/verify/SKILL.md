@@ -25,6 +25,12 @@ already installed instead of caching a second copy of it per Playwright version:
 use: { baseURL: '…', channel: 'chrome' }
 ```
 
+**Proof of work.** When the task changed UI, save 1–3 screenshots of the changed screen
+while you drive it in the browser, named after the task file in its own folder:
+`<task dir>/NNN-slug-1.png` (the task file's name minus `-TODO.md`). They are gitignored
+like the `.log`, and the runner attaches them to the Kanban card when it moves it to
+Review. A task with no UI change saves none.
+
 `npx fallow audit`: always pass `--base` pinned to the pre-session commit. Without it the
 default base is the merge-base with `origin/main`, so once any of this session's work is
 committed the audit compares your changes against themselves and reports a false `pass`.

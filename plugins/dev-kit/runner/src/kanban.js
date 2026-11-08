@@ -12,6 +12,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { reportToIssue } from "./issue.js";
+import { attachScreenshots } from "./screenshots.js";
 import { stemOf } from "./queue.js";
 
 // The exact marker buildTaskFile() writes, anchored to the start of its own line:
@@ -170,7 +171,11 @@ export async function closeLoop(
         : `results posted (card not moved — create a "${kanban.lists.review}" list)`,
     );
   }
-  return out;
+  // A failed upload must not undo the close above: the card has moved either way.
+  const shots = await attachScreenshots(kanban, { full, stem, id }).catch(
+    (err) => [`screenshots: ${err.message}`],
+  );
+  return [...out, ...shots];
 }
 
 const CARDS = `query C($ids: [uuid!]!) {

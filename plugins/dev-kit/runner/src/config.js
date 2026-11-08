@@ -44,6 +44,8 @@ export function loadConfig(
     kanban: {
       endpoint: file.endpoint ?? null,
       adminSecret: file.adminSecret ?? null,
+      // The Kanban app itself, which stores the screenshots closeLoop attaches (#69).
+      appUrl: file.appUrl ?? "https://todzz.eu",
       lists: {
         todo: "TODO",
         doing: "Doing",

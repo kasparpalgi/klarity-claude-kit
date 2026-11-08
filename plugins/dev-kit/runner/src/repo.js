@@ -123,15 +123,22 @@ export async function baseBranch(cwd) {
   }
 }
 
+// Session logs, and the screenshots `/verify` saves as `NNN-slug-*.png` (#69) —
+// anchored to the task dir, so a picture under `assets/` is still committed.
+const IGNORED = ["*.log", "/[0-9]*-*.png"];
+
 /**
- * Keep agent logs out of git so they never dirty the tree — and commit the
- * rule itself, or the untracked .gitignore would dirty it instead.
+ * Keep agent logs and screenshots out of git so they never dirty the tree — and
+ * commit the rules themselves, or the untracked .gitignore would dirty it instead.
  */
 export async function ignoreLogs(dir, cwd) {
   const file = join(dir, ".gitignore");
   const cur = existsSync(file) ? readFileSync(file, "utf8") : "";
-  if (cur.includes("*.log")) return;
-  writeFileSync(file, cur + "*.log\n");
+  const lines = cur.split(/\r?\n/);
+  const missing = IGNORED.filter((rule) => !lines.includes(rule));
+  if (!missing.length) return;
+  const sep = cur && !cur.endsWith("\n") ? "\n" : "";
+  writeFileSync(file, cur + sep + missing.map((r) => `${r}\n`).join(""));
   await git(["add", file], cwd);
   await git(["commit", "-m", "chore: ignore runner task logs", file], cwd);
 }

@@ -117,6 +117,7 @@ self-healed or announced exactly once, on the edge.
 | A run that ends **clean** but never renamed the file | Finishes the bookkeeping the agent skipped — renames to `-DONE`, notes it, commits, pushes, moves the card — and reports **✔**. A clean tree means nothing was left half-done, so this is the common "already complete / nothing to do" ending, not a failure |
 | A run that ends with the tree **dirty** | **⚠ did not finish**: parks the uncommitted work in a stash (recoverable with `git stash pop`) and names what was left. Exit 0 only means the agent stopped talking, so this is checked, never assumed |
 | A task that runs but keeps leaving the tree dirty | Two attempts, then **⏭ stuck task** once and that number is skipped so the queue advances. Editing the task file resets the count |
+| The second attempt at a task | Runs `/todo NNN <note>`: the note says how attempt 1 ended (the reason, the stash commit holding its work, its `NNN-slug.log`), so it resumes instead of starting cold. The note lives in state.json, never in the task file, because editing the file resets the count. Attempt 1 is always the bare `/todo NNN` |
 
 Attempt counts and blocked reasons live in `~/.kanban-runner/state.json` — deliberately
 outside every repo, so runner bookkeeping can never dirty a working tree. Delete the file
@@ -567,7 +568,8 @@ silent no-op and nothing else changes.
 | `src/run.js`     | tick loop, one task per tick, `--check` |
 | `src/repo.js`    | git preflight: dirt classification, branch, fetch/pull |
 | `src/queue.js`   | task folder → pending list, attempt-limited pick |
-| `src/state.js`   | `~/.kanban-runner/state.json`: blocked reasons, attempt counts |
+| `src/state.js`   | `~/.kanban-runner/state.json`: blocked reasons, attempt counts, how the last attempt ended |
+| `src/retry.js`   | the `/todo` prompt: bare on attempt 1, plus the last ending on a retry |
 | `src/herdr.js`   | run Claude in a herdr pane, wait out blocks |
 | `src/classify.js`| model + effort tier for a task file |
 | `src/pricing.js` | LiteLLM price list → `claude_model_pricing` rows |

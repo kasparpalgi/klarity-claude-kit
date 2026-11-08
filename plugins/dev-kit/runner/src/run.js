@@ -69,6 +69,7 @@ import { selfUpdate } from "./selfUpdate.js";
 import { syncSecrets } from "./secrets.js";
 import { trustProject } from "./trust.js";
 import { recordUsage } from "./sessionUsage.js";
+import { todoPrompt } from "./retry.js";
 import { costIn, openStatus } from "./status.js";
 import * as state from "./state.js";
 
@@ -132,6 +133,7 @@ async function runTask({
   repoName,
   filename,
   number,
+  prompt,
   repoPath,
   cwd,
   dir,
@@ -158,7 +160,7 @@ async function runTask({
     const r = await runInHerdr({
       name: `task-${number}`,
       cwd,
-      prompt: `/todo ${number}`,
+      prompt,
       args: cfg.unattended
         ? [...model, "--dangerously-skip-permissions"]
         : [...model, "--permission-mode", "acceptEdits"],
@@ -177,7 +179,7 @@ async function runTask({
     return r;
   }
   if (cfg.useHerdr) log("  herdr down — falling back to headless");
-  const args = ["-p", `/todo ${number}`, ...model];
+  const args = ["-p", prompt, ...model];
   if (!interactive) args.push("--dangerously-skip-permissions");
   return shell("claude", args, cwd);
 }
@@ -384,6 +386,13 @@ async function runRepo(repoName, repoPath) {
   const tier = explicitTier(content) ?? (await classify(content.slice(0, 500)));
   const attempt = state.addTry(repoName, taskStem, mtime);
   log(`▶ ${repoName} ${filename} (${tier.label}, attempt ${attempt})`);
+  // Attempt 2+ hears how the one before ended (#72); attempt 1 is the bare /todo.
+  const prompt = todoPrompt(
+    number,
+    attempt,
+    state.lastEnding(repoName, taskStem, mtime),
+  );
+  if (prompt !== `/todo ${number}`) log(`  told: ${prompt}`);
   // On the card within this tick, edited as the run goes (#68).
   const say = await openStatus(cfg.kanban, {
     repoName,
@@ -423,6 +432,7 @@ async function runRepo(repoName, repoPath) {
       repoName,
       filename,
       number,
+      prompt,
       repoPath,
       cwd,
       dir,
@@ -505,11 +515,17 @@ async function runRepo(repoName, repoPath) {
   adopt();
   // The stash rewrites the task file too; adopt that mtime as well, or it reads
   // as a human retry and the count resets — tekdok 024 ran "attempt 1" 3 times.
+  // Returns the stash commit, so the next attempt can be told where its work is.
   const park = async () => {
     const parked = await parkDirty(repoPath, filename);
     adopt();
-    return parked;
+    if (!parked) return null;
+    return (
+      await git(["rev-parse", "--short", "stash@{0}"], repoPath)
+    ).stdout.trim();
   };
+  const ended = (why, stash) =>
+    state.setLast(repoName, taskStem, { why, stash, log: logFile });
 
   // A pull request repo keeps the worktree for the retry; the clone was never touched.
   if (waitingOnLimit) return true;
@@ -533,6 +549,7 @@ async function runRepo(repoName, repoPath) {
       failed,
       output,
       tier,
+      ended,
     });
   }
 
@@ -545,6 +562,7 @@ async function runRepo(repoName, repoPath) {
       ? `exit ${code}`
       : "the agent never started in its pane";
     log(`✘ ${filename} ${why}${parked ? " — parked leftover work" : ""}`);
+    ended(why, parked);
     await say("failed", { costUsd, note: why });
     await notify(
       "Runner ✘",
@@ -588,6 +606,10 @@ async function runRepo(repoName, repoPath) {
         : `uncommitted (could not park): ${left.slice(0, 6).join(", ")}`,
     ].filter(Boolean);
     log(`⚠ ${filename} — ran but did not finish: ${why.join("; ")}`);
+    ended(
+      `${renamed ? "" : "the task file was never renamed, and "}${left.length} changed files were left uncommitted`,
+      parked,
+    );
     await say("unfinished", { costUsd });
     await notify(
       "Runner ⚠ did not finish",
@@ -686,6 +708,7 @@ async function finishPrRun({
   failed,
   output,
   tier,
+  ended,
 }) {
   const stem = stemOf(filename);
   // The worktree goes once the branch ships; its screenshots stay for closeLoop.
@@ -705,6 +728,7 @@ async function finishPrRun({
   } catch (err) {
     const why = err.stderr?.trim() || err.message;
     log(`✘ ${filename} — its branch did not ship: ${why}`);
+    ended(`its branch did not ship, the work is still in the worktree ${cwd}`);
     await notify(
       "Runner ✘ branch did not ship",
       `${repoName} ${filename}\n\n${why}\n\nThe work is still in ${cwd}.`,
@@ -741,6 +765,7 @@ async function finishPrRun({
   await closeWorktree(repoPath, cwd);
   if (failed) {
     log(`✘ ${filename} ${failed} — nothing on its branch`);
+    ended(`${failed}, with nothing committed on its branch`);
     await notify(
       "Runner ✘",
       `${repoName} ${filename} ${failed}\n\n${tail(output)}`,

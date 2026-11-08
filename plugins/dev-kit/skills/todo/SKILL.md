@@ -5,7 +5,7 @@ argument-hint: '[number]'
 disable-model-invocation: true
 ---
 
-# Run task `$ARGUMENTS`
+# Run task `$ARGUMENTS[0]`
 
 The `doc/todo/` folder is the prompt history: one markdown file per request, holding the
 original prompt at the top and the outcome at the bottom. Never rewrite the top part.
@@ -26,7 +26,14 @@ No exit skips that.
 ## 1. Load
 
 Find the task folder: use `.claude/todo/` if it exists, otherwise `doc/todo/`.
-Find the file whose name starts with `$ARGUMENTS` in that folder. Read it.
+Find the file whose name starts with `$ARGUMENTS[0]` in that folder. Read it.
+
+**A retry.** Anything after the number in `$ARGUMENTS` comes from the runner: it says how
+the last attempt at this task ended, meaning the reason, the stash commit holding its
+uncommitted work, and its transcript. Start from that state. Look at the stash
+(`git stash show -p <sha>`, then `git stash apply <sha>` if it is worth keeping) before
+redoing any work, and open the transcript only when the reason is unclear. Do not copy the
+note into the task file: editing the file resets the runner's attempt count.
 
 **`> Plan first`** among the header lines (under `> Run with:`) means a person wants to
 approve the plan before any code exists:
@@ -155,7 +162,7 @@ uncommitted, which makes the runner pick the same number again forever. Verify a
 in the repo you worked in:
 
 ```bash
-ls <task-dir>/$ARGUMENTS-*            # exactly one file, ending -DONE.md or -BLOCKED.md
+ls <task-dir>/$ARGUMENTS[0]-*         # exactly one file, ending -DONE.md or -BLOCKED.md
 git status --porcelain                # empty
 git log --oneline -1                  # your commit
 ```

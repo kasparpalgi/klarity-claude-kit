@@ -66,7 +66,9 @@ export function tries(repo, stem, mtime) {
 export function addTry(repo, stem, mtime, count = 1) {
   const s = read();
   const prev = tries(repo, stem, mtime);
-  s.tries[key(repo, stem)] = { count: prev + count, mtime };
+  // A human edit (new mtime) starts over, so the old ending goes with the count.
+  const last = prev ? s.tries[key(repo, stem)].last : undefined;
+  s.tries[key(repo, stem)] = { count: prev + count, mtime, last };
   write(s);
   return prev + count;
 }
@@ -82,6 +84,23 @@ export function seen(repo, stem, mtime) {
   if (!e) return;
   e.mtime = mtime;
   write(s);
+}
+
+/**
+ * How this attempt ended — `{ why, stash?, log? }` — for the next one's prompt
+ * (retry.js). It lives on the tries entry, so a human edit and a prune drop it too.
+ */
+export function setLast(repo, stem, last) {
+  const s = read();
+  const e = s.tries[key(repo, stem)];
+  if (!e) return;
+  e.last = last;
+  write(s);
+}
+
+export function lastEnding(repo, stem, mtime) {
+  const e = read().tries[key(repo, stem)];
+  return e && e.mtime === mtime ? (e.last ?? null) : null;
 }
 
 /** Forget stems that are no longer pending, so a reused NNN starts fresh. */

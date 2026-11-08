@@ -5,8 +5,9 @@
  * on the repo (`gh api repos/<r>/hooks` → `[]`) and GITHUB_WEBHOOK_SECRET was never
  * configured, so a finished task never moved its card, never reported what it did,
  * and never filed its follow-ups. The runner knows all three the moment a task ends
- * and needs no deploy, so it says so directly. The webhook stays idempotent with
- * this: it skips a card that is already past TODO.
+ * and needs no deploy, so it says so directly. Where that webhook does run, it leaves
+ * a card carrying the runner's status line (status.js) to this file: two closers meant
+ * a "✅ Task complete" next to the Results (svelte-hasura-boilerplate#80).
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -113,8 +114,9 @@ export function doneFile(dir, stem) {
 }
 
 /**
- * Move the card to Review with the agent's own Results as a comment. Follow-ups the
- * run split out are filed by the reconcile sweep (followup.js). Returns log lines.
+ * Move the card to Review with the agent's own Results as a comment, then report to the
+ * issue. Follow-ups the run split out are filed by the reconcile sweep (followup.js).
+ * Returns log lines.
  */
 export async function closeLoop(
   kanban,
@@ -127,21 +129,40 @@ export async function closeLoop(
   const text = readFileSync(join(full, done), "utf8");
   const body = resultsOf(text) ?? `Task complete — \`${dir}/${done}\``;
 
-  // The issue is closed straight from here with `gh`, so it does not depend on the
-  // Kanban being configured — nor on the push webhook, which was never registered.
-  const out = await reportToIssue({ repoName, text, body, blocked });
+  // The card first, the issue second. The Kanban mirrors an issue comment back onto
+  // the card, and it knows the copy for the same comment only when the card already
+  // holds it. Issue first, the copy raced the SAID check below and nine cards showed
+  // their Results twice (svelte-hasura-boilerplate#80). The issue is closed with `gh`
+  // even when the Kanban is unset or failing.
+  const card = await closeCard(kanban, {
+    repoName,
+    full,
+    dir,
+    stem,
+    done,
+    text,
+    body,
+  }).catch((err) => [`kanban: ${err.message}`]);
+  const issue = await reportToIssue({ repoName, text, body, blocked });
+  return [...issue, ...card];
+}
 
-  if (!kanban?.endpoint || !kanban?.adminSecret) return out;
+async function closeCard(
+  kanban,
+  { repoName, full, dir, stem, done, text, body },
+) {
+  if (!kanban?.endpoint || !kanban?.adminSecret) return [];
+  const out = [];
   // A card the runner adopted for a card-less file (claim.js) is found by its path.
   const id =
     cardIdOf(text) ??
     (await gql(kanban, CARDS_AT_PATHS, { paths: [`${dir}/${stem}-TODO.md`] }))
       .todos[0]?.id;
-  if (!id) return [...out, `no card id in ${done} — no card to close`];
+  if (!id) return [`no card id in ${done} — no card to close`];
 
   const { boards } = await gql(kanban, BOARD, { repo: `%${repoName}%` });
   const board = boards?.[0];
-  if (!board) return [...out, `no board connected to ${repoName}`];
+  if (!board) return [`no board connected to ${repoName}`];
   const listId = (name) =>
     board.lists.find((l) => l.name.toLowerCase() === name.toLowerCase())?.id;
 

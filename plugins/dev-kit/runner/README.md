@@ -11,7 +11,7 @@ card enters the agent list on todzz
            └─ claude in a herdr pane  →  visible on the phone
                ├─ needs you  →  Pushbullet  →  answer in the relay PWA
                └─ /todo renames to NNN-slug-DONE.md, commits, pushes
-                   └─ push webhook moves the card                (task-016)
+                   └─ runner moves the card, Results on card + issue
 ```
 
 The `-DONE.md` rename **is** the state. No database, no marker files — restart is safe.
@@ -253,7 +253,10 @@ pane blocks, `✘ Failed` / `⚠ Did not finish`, and finally
 retry takes over the comment its unfinished attempt left; a `■ Finished` one is kept, so
 a card sent back for rework gets a fresh line. The Results comment stays separate. The
 Kanban's `cardThread.ts` drops these prefixes (`STATUS` in `src/status.js`) when it
-carries the thread into a re-queued task file — change both together.
+carries the thread into a re-queued task file — change both together. Its push webhook
+also leaves a card that carries one to the runner, so a finished card gets one close: no
+"✅ Task complete" beside the Results. `closeLoop` posts the Results on the card before
+the issue, so the webhook links the issue's copy instead of adding it again (#80).
 
 ### Legacy: tmux + `--interactive`
 

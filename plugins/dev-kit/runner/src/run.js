@@ -19,6 +19,7 @@ import { classify, explicitTier } from "./classify.js";
 import { usageLimitHit } from "./usage.js";
 import { aiderArgs, aiderFailed, excludeAiderFiles } from "./aider.js";
 import { herdrUp, paneLive, runInHerdr } from "./herdr.js";
+import { onList, unpush, watchCard } from "./leave.js";
 import { notify, tail } from "./notify.js";
 import { loadConfig, prFlow } from "./config.js";
 import {
@@ -93,10 +94,11 @@ const stamp = (ms) =>
   });
 const log = (...args) => console.log(clock(), ...args);
 
-function shell(cmd, args, cwd) {
+function shell(cmd, args, cwd, signal) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
       cwd,
+      signal,
       env: process.env,
       stdio: [interactive ? "inherit" : "ignore", "pipe", "pipe"],
     });
@@ -139,10 +141,16 @@ async function runTask({
   dir,
   tier,
   say,
+  signal,
 }) {
   if (tier.engine === "aider") {
     excludeAiderFiles(repoPath);
-    const r = await shell("aider", aiderArgs(tier, `${dir}/${filename}`), cwd);
+    const r = await shell(
+      "aider",
+      aiderArgs(tier, `${dir}/${filename}`),
+      cwd,
+      signal,
+    );
     return aiderFailed(r.output) ? { ...r, code: r.code || 1 } : r;
   }
   const model = [
@@ -166,6 +174,7 @@ async function runTask({
         : [...model, "--permission-mode", "acceptEdits"],
       taskMs: cfg.taskMinutes * 60000,
       done: () => retired(cwd, dir, stemOf(filename)),
+      signal,
       blockedMs: cfg.blockedMinutes * 60000,
       onBlocked: async (pane) => {
         await say("needs");
@@ -181,7 +190,7 @@ async function runTask({
   if (cfg.useHerdr) log("  herdr down — falling back to headless");
   const args = ["-p", prompt, ...model];
   if (!interactive) args.push("--dangerously-skip-permissions");
-  return shell("claude", args, cwd);
+  return shell("claude", args, cwd, signal);
 }
 
 /** HEAD each repo's cards were last reconciled at: once per new commit, not per tick. */
@@ -427,6 +436,16 @@ async function runRepo(repoName, repoPath) {
     live = false,
     retriedStart = false,
     waitingOnLimit = false;
+  // The tick loop is parked in this run, so watch the card from here (#73).
+  const stop = new AbortController();
+  const unwatch = watchCard({
+    pollMs: cfg.pollSeconds * 1000,
+    check: () => onList(repoPath, dir, filename, base),
+    onLeft: () => {
+      log(`⏹ ${filename} — its card left the agent list, stopping the run`);
+      stop.abort();
+    },
+  });
   for (;;) {
     const r = await runTask({
       repoName,
@@ -438,6 +457,7 @@ async function runRepo(repoName, repoPath) {
       dir,
       tier,
       say,
+      signal: stop.signal,
     });
     ({ code, output, live } = r);
     started = r.started !== false;
@@ -446,19 +466,21 @@ async function runRepo(repoName, repoPath) {
     // clear on a second try, and a fresh pane costs seconds — so retry here,
     // in this tick, instead of burning an attempt on a wall the agent never
     // saw. Two of those retired task-032's first task before it ever spoke.
-    if (!started && !retriedStart) {
+    if (!started && !retriedStart && !stop.signal.aborted) {
       retriedStart = true;
       log(`  ${filename} — no agent in the pane, retrying once`);
       continue;
     }
     break;
   }
+  unwatch();
+  const stopped = stop.signal.aborted;
   // The CLI only says the usage wall was hit after the fact. The 5-hour and the
   // weekly wall cover every model and effort, so a cheaper tier meets the same
   // wall within seconds: server 026 burned three panes on it, tekdok 466 five,
   // and the fifth stalled herdr. Stop every repo until the reset instead.
   // Gemini via aider is not on the Claude budget; its output is not the CLI's.
-  const limit = tier.engine ? null : usageLimitHit(output);
+  const limit = tier.engine || stopped ? null : usageLimitHit(output);
   if (limit) {
     state.setCooldown(limit.untilMs);
     // Hitting the usage wall is the account's state, not this task's fault —
@@ -517,11 +539,11 @@ async function runRepo(repoName, repoPath) {
   // as a human retry and the count resets — tekdok 024 ran "attempt 1" 3 times.
   // Returns the stash commit, so the next attempt can be told where its work is.
   const park = async () => {
-    const parked = await parkDirty(repoPath, filename);
+    const parked = await parkDirty(cwd, filename);
     adopt();
     if (!parked) return null;
     return (
-      await git(["rev-parse", "--short", "stash@{0}"], repoPath)
+      await git(["rev-parse", "--short", "stash@{0}"], cwd)
     ).stdout.trim();
   };
   const ended = (why, stash) =>
@@ -529,6 +551,21 @@ async function runRepo(repoName, repoPath) {
 
   // A pull request repo keeps the worktree for the retry; the clone was never touched.
   if (waitingOnLimit) return true;
+
+  if (stopped) {
+    // Not this task's failure: give the attempt back. The next tick pulls the
+    // draft; moving the card back writes a fresh -TODO that queues normally.
+    state.addTry(repoName, taskStem, mtime, -1);
+    if (!viaPr) await unpush(cwd, base);
+    const sha = await park();
+    if (viaPr) await closeWorktree(repoPath, cwd);
+    await say("unfinished", { costUsd, note: "card left the agent list" });
+    await notify(
+      "Runner ⏹ stopped — card left the agent list",
+      `${repoName} ${filename}\n\n${sha ? `Its work is parked in stash ${sha} — \`git stash apply ${sha}\` to recover.` : "It had changed nothing."}`,
+    );
+    return true;
+  }
 
   if (viaPr) {
     const failed =

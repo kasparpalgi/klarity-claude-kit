@@ -132,3 +132,21 @@ test("a wait that fails with the pane gone is a finished run, not a live one", a
   assert.equal(r.code, 1);
   assert.equal(r.live, false);
 });
+
+test("an aborted run closes its tab and stops waiting at once (#73)", async () => {
+  const closed = join(mkdtempSync(join(tmpdir(), "closed-")), "log");
+  writeFileSync(closed, "");
+  // A real `agent wait` ignores its tab closing until its own timeout.
+  fakeHerdr(`"tab create") echo '${ok('{"tab_id":"t9","root_pane":{"pane_id":"p1"}}')}' ;;
+"agent prompt") exec sleep 30 ;;
+"tab close") echo "$3" >> ${closed}; echo '${ok("{}")}' ;;`);
+  const stop = new AbortController();
+  setTimeout(() => stop.abort(), 300);
+  const t0 = Date.now();
+  const r = await run({ signal: stop.signal });
+  assert.ok(Date.now() - t0 < 5000, "returned while the prompt still waited");
+  assert.equal(readFileSync(closed, "utf8").trim(), "t9");
+  assert.equal(r.code, 1);
+  assert.equal(r.live, false);
+  assert.equal(r.output, "transcript\n");
+});

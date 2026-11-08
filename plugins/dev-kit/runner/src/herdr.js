@@ -15,14 +15,20 @@ const LEAVING = ["--until", "working", "--until", "idle", "--until", "done"];
  * a module-level read sent them to the real herdr, whose reap() closed every
  * live `task-*` tab — killing the very agent that ran `npm test` (task 044).
  */
-async function raw(args, timeout = 20000) {
+async function raw(args, timeout = 20000, signal) {
   const bin = process.env.HERDR_BIN ?? "herdr";
-  const { stdout } = await exec(bin, args, { timeout, maxBuffer: 8 << 20 });
+  const opts = { timeout, maxBuffer: 8 << 20, signal };
+  const { stdout } = await exec(bin, args, opts);
   return stdout;
 }
 
-async function hx(args, timeout = 20000) {
-  return JSON.parse(await raw(args, timeout)).result;
+/**
+ * `signal` kills the CLI call itself. A pending `agent wait` does not notice
+ * its tab closing — measured: it answered agent_not_running only at its own
+ * timeout, which for a run is taskMinutes (#73).
+ */
+async function hx(args, timeout = 20000, signal) {
+  return JSON.parse(await raw(args, timeout, signal)).result;
 }
 
 /** Cheap liveness probe. False means fall back to the headless path. */
@@ -125,16 +131,17 @@ const busy = async (name) =>
   );
 
 /** Clamped: a deadline that passed mid-poll gave herdr a negative timeout (kanban 206). */
-const waitFor = (name, until, ms) => {
+const waitFor = (name, until, ms, signal) => {
   const t = Math.max(1000, Math.round(ms));
-  return hx(["agent", "wait", name, ...until, "--timeout", String(t)], t + 15000);
+  const args = ["agent", "wait", name, ...until, "--timeout", String(t)];
+  return hx(args, t + 15000, signal);
 };
 
 /**
  * `agent_prompt_stalled` means the keystrokes never landed — the pane is still
  * at an empty prompt — so one resend is safe and usually enough.
  */
-async function promptAgent(name, prompt, taskMs) {
+async function promptAgent(name, prompt, taskMs, signal) {
   const args = [
     "agent",
     "prompt",
@@ -145,11 +152,11 @@ async function promptAgent(name, prompt, taskMs) {
     String(taskMs),
   ];
   try {
-    return await hx(args, taskMs + 15000);
+    return await hx(args, taskMs + 15000, signal);
   } catch (err) {
     if (!/agent_prompt_stalled/.test(err.message)) throw err;
     await sleep(3000);
-    return hx(args, taskMs + 15000);
+    return hx(args, taskMs + 15000, signal);
   }
 }
 
@@ -160,7 +167,8 @@ async function promptAgent(name, prompt, taskMs) {
  * within blockedMs of total wall clock.
  */
 export async function runInHerdr(opts) {
-  const { name, cwd, args, prompt, taskMs, blockedMs, onBlocked, done } = opts;
+  const { name, cwd, args, prompt, taskMs, blockedMs, onBlocked, done, signal } =
+    opts;
   const pollMs = opts.pollMs ?? 30000;
   const end = Date.now() + taskMs;
   // False until a wait actually hands us an agent. `agent start` resolving is
@@ -171,6 +179,21 @@ export async function runInHerdr(opts) {
   const ws = await ensureWorkspace(cwd);
   const args0 = ["tab", "create", "--workspace", ws, "--cwd", cwd];
   const t = await hx([...args0, "--label", name, "--no-focus"]);
+  // Aborted when the card leaves the agent list (#73). herdr has no `agent stop`:
+  // closing the tab ends the agent, and the signal kills our blocking CLI call.
+  // The pane is read first: once the tab is gone there is nothing to read.
+  let last, halting;
+  const halt = () =>
+    (halting ??= (async () => {
+      last = await readPane(name);
+      await hx(["tab", "close", t.tab_id]).catch(() => {});
+    })());
+  const pane = async () => {
+    await halting;
+    return last ?? readPane(name);
+  };
+  if (signal?.aborted) await halt();
+  else signal?.addEventListener("abort", halt, { once: true });
 
   /**
    * Notify the phone and wait for each block to be answered, until settled.
@@ -180,8 +203,8 @@ export async function runInHerdr(opts) {
     const deadline = Date.now() + blockedMs;
     while (agent.agent_status === "blocked" && Date.now() < deadline) {
       await onBlocked?.(await readPane(name));
-      await waitFor(name, LEAVING, deadline - Date.now());
-      ({ agent } = await waitFor(name, SETTLED, deadline - Date.now()));
+      await waitFor(name, LEAVING, deadline - Date.now(), signal);
+      ({ agent } = await waitFor(name, SETTLED, deadline - Date.now(), signal));
       await sleep(2000); // the TUI redraws after a dialog; prompting too soon stalls
     }
     return agent;
@@ -203,38 +226,43 @@ export async function runInHerdr(opts) {
         ...args,
       ],
       90000,
+      signal,
     ).catch((err) => {
       // Blocked during startup: the name stays usable, so answer it like any block.
       if (!/agent_not_ready/.test(err.message)) throw err;
     });
 
-    const first = await waitFor(name, SETTLED, 60000);
+    const first = await waitFor(name, SETTLED, 60000, signal);
     started = true;
     await clear(first.agent);
     // A still-blocked agent makes promptAgent fail with agent_blocked, below.
-    let agent = await clear((await promptAgent(name, prompt, taskMs)).agent);
+    let agent = await clear(
+      (await promptAgent(name, prompt, taskMs, signal)).agent,
+    );
     // Idle on a background job and not done yet: wait for the job to wake it.
     while (
       READY.has(agent.agent_status) &&
       Date.now() < end &&
       !done?.() &&
+      !signal?.aborted &&
       (await busy(name))
     ) {
       // Poll, not `--until working`: a quick wake-up can finish in between.
       await sleep(pollMs);
       agent = await clear(
-        (await waitFor(name, SETTLED, end - Date.now())).agent,
+        (await waitFor(name, SETTLED, end - Date.now(), signal)).agent,
       );
     }
     const stuck = agent.agent_status === "blocked";
-    if (!stuck) return { code: 0, output: await readPane(name), started };
-    return { code: 1, output: await readPane(name), started, live: true };
+    if (!stuck && !signal?.aborted)
+      return { code: 0, output: await pane(), started };
+    return { code: 1, output: await pane(), started, live: stuck && !signal?.aborted };
   } catch (err) {
     // A herdr timeout or CLI error is a stuck run, not a crash: keep the log.
     // Our wait running out is not the agent stopping — `live` says it still
     // works or waits on a human, so run.js must not close its worktree (#60).
-    const live = await paneLive(name);
-    return { code: 1, output: await readPane(name), err: err.message, started, live };
+    const live = !signal?.aborted && (await paneLive(name));
+    return { code: 1, output: await pane(), err: err.message, started, live };
   }
   // Deliberately no `finally` close: the pane stays open at the shell prompt so
   // a human can type a follow-up and close it themselves. The next run's reap()

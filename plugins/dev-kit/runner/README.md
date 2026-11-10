@@ -664,3 +664,6 @@ silent no-op and nothing else changes.
   needs `herdr` on `PATH` and `dev.herdr.server` running.
 - A repo whose `CLAUDE.md` forbids committing will complete the task but leave HEAD
   unchanged — the log says so and no push is attempted.
+- `test/smoke.test.js` runs one real `--once` tick: a scratch origin and clone, one
+  `-TODO` task, and a fake `claude` that renames it and commits. If pickup or landing
+  breaks, `npm test` fails here before the change reaches the machines.

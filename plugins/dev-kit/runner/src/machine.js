@@ -11,6 +11,9 @@
  * (claim.js) so it never double-runs.
  */
 
+/** `> Machine: cloud` — a Claude Code cloud session, not a computer (#86). */
+export const CLOUD = "cloud";
+
 const LINE = /^[ \t]*>?[ \t]*machine:[ \t]*(.+?)[ \t]*$/im;
 
 /** `Karel Ubuntu` and `karel-ubuntu` are the same machine. */
@@ -38,8 +41,8 @@ export const myName = ({ machine }) =>
  */
 export function machineFilter({ machine }) {
   const me = new Set([machine ?? []].flat().map(slug).filter(Boolean));
-  if (!me.size) return () => true;
-  return (want) => !want || me.has(want);
+  // Never run here, whoever we are: cloud.js sends it to a cloud session.
+  return (want) => want !== CLOUD && (!me.size || !want || me.has(want));
 }
 
 /** The subset of `pending` this machine owns. */

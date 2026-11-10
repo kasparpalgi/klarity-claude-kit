@@ -388,6 +388,7 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 | `useHerdr`       | run Claude in a herdr pane, visible on the phone (default false) |
 | `unattended`     | on the herdr path, skip permissions instead of asking (true here) |
 | `remoteControl`  | on the herdr path, also open the session in claude.ai/code and the Claude app (default false). See *Remote Control* below |
+| `cloud`          | send `> Machine: cloud` tasks to Claude Code cloud sessions (default false). One runner only, on the account the sessions should bill. See *Cloud* below |
 | `taskMinutes`    | cap on one `/todo` run (default 240) — only a still-`working` agent ever reaches it, so it guards against a hung agent, not a long task. At 45, Opus/high tasks with an E2E run were parked mid-work and re-run (tekdok 034, kanban 206) |
 | `blockedMinutes` | how long to wait for a human to answer a prompt (default 30)    |
 | `machine`        | this computer's id — a string or a list of spellings it answers to. Unset means it is the only runner and takes every task |
@@ -464,6 +465,38 @@ belongs elsewhere.
 
 Setting `machine` on a single-runner setup is optional; unset means "the only machine
 there is", which is what every existing install keeps doing.
+
+### Cloud — no machine at all
+
+`> Machine: cloud` (**Cloud** on the card) runs the task in a Claude Code cloud session.
+No runner ever runs it locally, not even one with no `machine` set. The one runner with
+`"cloud": true` sends it (`src/cloud.js`, `src/cloudTick.js`):
+
+1. **Start.** From the clone on its pushed base branch, the runner runs
+   `claude --cloud "<prompt>" --model … --effort …` under `script`, because `--cloud`
+   refuses to start without a terminal. The CLI prints the session's
+   `claude.ai/code/session_…` link and exits within seconds. The link goes on the card's
+   status line (`▶ Running on cloud …`) and to the phone. The runner goes back to its
+   queue and never waits on the session.
+2. **The prompt carries the skills.** Plugins don't load in a cloud session, so the prompt
+   is `/todo NNN` plus the runner's own copy of the `todo` and `verify` skills, with three
+   cloud rules: work on `todo/<stem>`, push it, open no PR (`gh` isn't signed in there).
+   It's always the version the runner has, so there's nothing to copy into repos or upload
+   to claude.ai. A copy in a repo's `.claude/skills/` would also shadow dev-kit's `/todo`
+   in every local run.
+3. **PR.** Once `origin/todo/<stem>` holds the task's `-DONE`/`-BLOCKED` file, a tick opens
+   the PR. It's ready for a person in a push-to-main repo, or a draft in a `pullRequests`
+   repo, where the review sweep takes over. A PR the session opened itself counts too. The
+   card's line becomes `■ Finished on cloud · PR #N …`, and the session link stays on it.
+4. **Done at the merge.** The file stays `-TODO` on the base branch while the PR is open.
+   The merge brings the rename, and the reconcile sweep moves the card to Review with the
+   Results. A WIP push without the rename doesn't count as a finish.
+
+A task is sent once per version of its file. Editing the file sends it again, and a start
+that fails twice in a row isn't retried. Only repos whose checks run without Hasura, a
+database or the home network should get Cloud cards: the VM reaches GitHub and package
+registries, nothing else. Sessions bill the account the runner is signed in to
+(`claude auth status`), so turn `cloud` on for one runner on your own account.
 
 ## Pull-request repos
 

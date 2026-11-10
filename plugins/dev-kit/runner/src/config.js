@@ -27,6 +27,9 @@ export function loadConfig(
     // Also show the herdr pane in claude.ai/code and the Claude app (#85). The
     // session lands in the account this machine is logged in to, hence opt-in.
     remoteControl: file.remoteControl ?? false,
+    // Send `> Machine: cloud` tasks to Claude Code cloud sessions (#86). They run on
+    // this machine's account, so set it on one runner only: two would both send them.
+    cloud: file.cloud ?? false,
     taskMinutes: file.taskMinutes ?? 240,
     // Who picks model + effort for a card left on Auto (classify.js). The call is
     // tiny, so the strongest non-Fable model is the default judge.

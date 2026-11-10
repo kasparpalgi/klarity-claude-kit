@@ -79,13 +79,15 @@ const EDIT = `mutation E($id: uuid!, $body: String!) {
  */
 export async function openStatus(
   kanban,
-  { repoName, todoId, machine, tier, attempt, log },
+  { repoName, todoId, machine, tier, attempt, startMs, url, log },
 ) {
+  // A cloud run (#86) is reopened ticks later: it passes its own start and link.
   const run = {
     machine: machine ?? hostname(),
-    startMs: Date.now(),
+    startMs: startMs ?? Date.now(),
     tier,
     attempt,
+    url,
   };
   let commentId = null;
   const write = async (body) => {

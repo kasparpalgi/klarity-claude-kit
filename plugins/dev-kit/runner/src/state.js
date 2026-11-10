@@ -16,6 +16,7 @@ const EMPTY = {
   blocked: {},
   tries: {},
   handed: {},
+  cloud: {},
   cooldownUntil: 0,
   lastRepo: null,
   boarded: [],
@@ -128,17 +129,29 @@ export function handOff(repo, stem, pr) {
 
 export const handedTo = (repo, stem) => read().handed[key(repo, stem)] ?? null;
 
-/** Forget hand-offs of tasks that are no longer pending at all. */
+/** A task sent to a cloud session (#86): `{ url, mtime, at, tier, attempt, pr? }`. */
+export function sendCloud(repo, stem, sent) {
+  const s = read();
+  s.cloud[key(repo, stem)] = sent;
+  write(s);
+}
+
+export const cloudOf = (repo, stem) => read().cloud[key(repo, stem)] ?? null;
+
+/** Forget hand-offs and cloud sessions of tasks that are no longer pending at all. */
 export function pruneHanded(repo, pendingStems) {
   const s = read();
-  const before = Object.keys(s.handed).length;
-  for (const k of Object.keys(s.handed))
-    if (
-      k.startsWith(`${repo}#`) &&
-      !pendingStems.includes(k.slice(repo.length + 1))
-    )
-      delete s.handed[k];
-  if (Object.keys(s.handed).length !== before) write(s);
+  let changed = false;
+  for (const map of [s.handed, s.cloud])
+    for (const k of Object.keys(map))
+      if (
+        k.startsWith(`${repo}#`) &&
+        !pendingStems.includes(k.slice(repo.length + 1))
+      ) {
+        delete map[k];
+        changed = true;
+      }
+  if (changed) write(s);
 }
 
 /** Store which repo ran last so the next tick can start after it (round-robin). */

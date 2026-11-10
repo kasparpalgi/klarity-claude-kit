@@ -42,7 +42,8 @@ import {
   stemOf,
   todoDir,
 } from "./queue.js";
-import { machineFilter, machineOf, mine, myName } from "./machine.js";
+import { CLOUD, machineFilter, machineOf, mine, myName } from "./machine.js";
+import { cloudTick } from "./cloudTick.js";
 import { waitingOnOrigin } from "./waiting.js";
 import { feedback, sweepRework } from "./rework.js";
 import { claim } from "./claim.js";
@@ -342,6 +343,20 @@ async function runRepo(repoName, repoPath) {
     for (const line of lines) log(`  ${repoName} ⇄ ${line}`);
     // The task folder moved under us: look again on the next tick.
     if ((await head()) !== was || lostFinish(lines)) return false;
+  }
+  // Cloud tasks never run here; the one runner with `cloud` sends them off (#86).
+  if (cfg.cloud) {
+    const lines = await cloudTick({
+      cfg,
+      repoName,
+      repoPath,
+      dir,
+      base,
+      viaPr,
+      tasks: all.filter((t) => t.machine === CLOUD),
+      log,
+    }).catch((err) => [`cloud: ${err.stderr?.trim() || err.message}`]);
+    for (const line of lines) log(`  ${repoName} ☁ ${line}`);
   }
   const pending = viaPr
     ? listPending(repoPath, dir, (t) =>
@@ -1024,6 +1039,7 @@ async function check() {
     `herdr: ${cfg.useHerdr ? ((await herdrUp()) ? "up" : "ENABLED BUT DOWN") : "off"}`,
   );
   log(`machine: ${cfg.machine ?? "(unset — takes every task)"}`);
+  if (cfg.cloud) log("cloud: sends `> Machine: cloud` tasks to cloud sessions");
   const isMine = machineFilter(cfg);
   const cooldown = state.cooldownUntil();
   if (cooldown) log(`⏳ usage limit — waiting until ${stamp(cooldown)}`);
@@ -1074,9 +1090,13 @@ async function check() {
     const ours = new Set(mine(pending, isMine).map((p) => p.name));
     for (const p of pending) {
       const n = state.tries(name, p.stem, p.mtime);
+      const sent = state.cloudOf(name, p.stem);
+      const cloud = sent?.pr ? `PR #${sent.pr}` : (sent?.url ?? "not sent yet");
       const who = ours.has(p.name)
         ? ""
-        : `  [→ ${p.machine ?? "unaddressed"}, not this machine]`;
+        : p.machine === CLOUD && cfg.cloud
+          ? `  [☁ ${cloud}]`
+          : `  [→ ${p.machine ?? "unaddressed"}, not this machine]`;
       const pr = viaPr && prOf(p, open, dir, state.handedTo(name, p.stem));
       const flight = pr ? `  [in PR #${pr.number}]` : "";
       const after = p.after.length

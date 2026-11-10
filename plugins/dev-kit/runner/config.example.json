@@ -5,6 +5,7 @@
 	"useHerdr": true,
 	"unattended": true,
 	"remoteControl": true,
+	"cloud": false,
 	"taskMinutes": 45,
 	"classifier": "Opus / low",
 	"blockedMinutes": 30,

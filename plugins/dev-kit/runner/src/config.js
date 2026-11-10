@@ -41,8 +41,9 @@ export function loadConfig(
     // host → runner folder there. Only the source machine lists any, so only it
     // pushes secrets (secrets.js).
     peers: file.peers ?? {},
-    // Repos whose every change is a pull request: their tasks run on a branch in a
-    // worktree and finish when the PR merges (pr.js, worktree.js). A repo with no
+    // Repos whose every change is a pull request: their tasks' worktrees ship as a
+    // PR and finish when it merges (pr.js, worktree.js); every other repo's land on
+    // the base branch (land.js). A repo with no
     // merge job must stay off this list, or its tasks would never finish.
     pullRequests: (file.pullRequests ?? []).map((r) => r.toLowerCase()),
     // Closing the card is optional: without an endpoint + adminSecret the runner

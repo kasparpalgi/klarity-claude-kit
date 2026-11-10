@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Local-clone runner: keep each repo clean and on its base branch, then run
- * /todo on the lowest unfinished task file. The -DONE.md rename is the state.
+ * /todo on the lowest unfinished task file — in a worktree of its own, so no agent
+ * ever touches the clone (#91). The -DONE.md rename is the state.
  * Every skip is either self-healed or announced once — it never wedges quietly.
  */
 
@@ -64,6 +65,8 @@ import {
   openWorktree,
   shipBranch,
 } from "./worktree.js";
+import { catchUp, landWorktree } from "./land.js";
+import { runnerTrees, sweepWorktrees } from "./sweep.js";
 import { fileFollowUps } from "./followup.js";
 import { onboard } from "./onboard.js";
 import { offboard } from "./offboard.js";
@@ -130,7 +133,7 @@ writeFileSync(
 /**
  * Herdr path: a visible pane on the phone, permission prompts answerable there.
  * Falls back to the original headless child whenever herdr is off or down.
- * `cwd` is the task's worktree in a pull request repo, else the clone itself.
+ * `cwd` is the task's worktree, never the clone itself.
  */
 async function runTask({
   repoName,
@@ -294,10 +297,18 @@ async function runRepo(repoName, repoPath) {
   for (const n of notes) log(`  ${repoName}: ${n}`);
   if (state.clearBlocked(repoName))
     await notify("Runner ▶ unblocked", `${repoName} is running again.`);
-  await reconcile(repoName, repoPath, dir);
-
   const viaPr = prFlow(cfg, repoName);
   const base = await baseBranch(repoPath);
+  const swept = await sweepWorktrees({
+    repoPath,
+    dir,
+    base,
+    viaPr,
+    live: (pane) => (cfg.useHerdr ? paneLive(pane) : false),
+  }).catch((err) => ({ lines: [`worktree sweep: ${err.message}`] }));
+  for (const line of swept.lines) log(`  ${repoName} ⌫ ${line}`);
+  if (swept.landed) return false; // pulled by the next tick's preflight
+  await reconcile(repoName, repoPath, dir);
   const all = listPending(repoPath, dir);
   let open = [];
   if (viaPr) {
@@ -426,17 +437,18 @@ async function runRepo(repoName, repoPath) {
     log,
   });
 
-  let cwd = repoPath;
-  if (viaPr) {
-    try {
-      cwd = await openWorktree(repoPath, taskStem, base, log);
-    } catch (err) {
-      const why = err.stderr?.trim() || err.message;
-      log(`✘ ${filename} — no worktree: ${why}`);
-      await say("failed", { note: "no worktree" });
-      await notify("Runner ✘ no worktree", `${repoName} ${filename}\n\n${why}`);
-      return true;
-    }
+  // Every task runs in a worktree of its own (#91), so the clone stays clean and on
+  // its base branch whatever the session does: a pull request repo's on `todo/<stem>`,
+  // a push-to-main repo's on `run/<stem>`, landed on the base branch when it ends.
+  let cwd;
+  try {
+    cwd = await openWorktree(repoPath, taskStem, base, log, { direct: !viaPr });
+  } catch (err) {
+    const why = err.stderr?.trim() || err.message;
+    log(`✘ ${filename} — no worktree: ${why}`);
+    await say("failed", { note: "no worktree" });
+    await notify("Runner ✘ no worktree", `${repoName} ${filename}\n\n${why}`);
+    return true;
   }
 
   const { stdout: before } = await git(["rev-parse", "HEAD"], cwd);
@@ -527,7 +539,6 @@ async function runRepo(repoName, repoPath) {
     log(`… ${filename} — still running in its pane, left alone`);
     return true;
   }
-  let { stdout: after } = await git(["rev-parse", "HEAD"], cwd);
 
   writeFileSync(logFile, output);
   log(`  log → ${logFile}`);
@@ -563,7 +574,7 @@ async function runRepo(repoName, repoPath) {
   const ended = (why, stash) =>
     state.setLast(repoName, taskStem, { why, stash, log: logFile });
 
-  // A pull request repo keeps the worktree for the retry; the clone was never touched.
+  // The worktree stays for the retry, which reuses it; the clone was never touched.
   if (waitingOnLimit) return true;
 
   if (stopped) {
@@ -572,7 +583,7 @@ async function runRepo(repoName, repoPath) {
     state.addTry(repoName, taskStem, mtime, -1);
     if (!viaPr) await unpush(cwd, base);
     const sha = await park();
-    if (viaPr) await closeWorktree(repoPath, cwd);
+    await closeWorktree(repoPath, cwd);
     await say("unfinished", { costUsd, note: "card left the agent list" });
     await notify(
       "Runner ⏹ stopped — card left the agent list",
@@ -604,9 +615,56 @@ async function runRepo(repoName, repoPath) {
     });
   }
 
+  // A push-to-main run ends in its worktree too (#91): what it left is parked there,
+  // what it committed lands on the base branch from there, and the clone only ever
+  // fast-forwards. Dirt confined to the task folder is a finished run's own
+  // bookkeeping — most often the deleted `-TODO` half of a rename whose `-DONE` side
+  // it committed alone (task-013) — so it is committed. Beside other dirt it is not:
+  // a `-DONE` landed over uncommitted work is a false finish. Exit 0 only means the
+  // agent stopped talking: completion is the rename plus a clean tree (159 had neither).
+  let left = await dirtyPaths(cwd);
+  if (code === 0 && left.length && left.every((p) => p.startsWith(dir + "/"))) {
+    await commitTaskDir(
+      cwd,
+      dir,
+      `docs(todo): finish ${filename} bookkeeping (runner)`,
+    );
+    left = await dirtyPaths(cwd);
+  }
+  const { stdout: after } = await git(["rev-parse", "HEAD"], cwd);
+  // Our file specifically, not "something numbered NNN" — a second task can share
+  // the number, and then a namesake's -TODO would read as "we never renamed ours".
+  const renamed = !listPending(cwd, dir).some((p) => p.name === filename);
+  const parked = left.length ? await park() : null;
+  carryScreenshots(join(cwd, dir), join(repoPath, dir), taskStem);
+  const landed = await landWorktree(repoPath, cwd, taskStem, base).catch(
+    (err) => ({ error: err.stderr?.trim() || err.message }),
+  );
+  if (landed.error) {
+    log(`✘ ${filename} — its commits did not land: ${landed.error}`);
+    ended(`its commits did not land on ${base}, they are in ${cwd}`, parked);
+    await say("failed", { costUsd, note: "did not land" });
+    await notify(
+      "Runner ✘ did not land",
+      `${repoName} ${filename}\n\n${landed.error}\n\nThe work is still in ${cwd}.`,
+    );
+    return true;
+  }
+  if (landed.branch) {
+    // Its CLAUDE.md asked for a branch per task: that waits for a person's merge.
+    state.addTry(repoName, taskStem, mtime, 3);
+    log(`↗ ${filename} — the session worked on ${landed.branch}, pushed there`);
+    await say("unfinished", { costUsd, note: `on branch ${landed.branch}` });
+    await notify(
+      "Runner ↗ task on a branch",
+      `${repoName} ${filename}\n\npushed ${landed.branch} — merge it into ${base}`,
+    );
+    return true;
+  }
+  if (landed.landed) log(`  landed ${landed.landed} commit(s) on ${base}`);
+  const caughtUp = await catchUp(repoPath, base);
+
   if (code !== 0) {
-    // Clear our own leftover dirt so a stuck run can't block the repo forever.
-    const parked = await park();
     // "exit 1" over a two-line herdr error reads as "the agent failed"; it did
     // not run at all, which is a different thing to go and look at.
     const why = started
@@ -622,34 +680,9 @@ async function runRepo(repoName, repoPath) {
     return true;
   }
 
-  // Exit 0 only means the agent stopped talking. Completion is the -DONE rename
-  // plus a clean tree, and the runner checks both — 159 "finished" with neither.
-  let left = await dirtyPaths(repoPath);
-
-  // Dirt confined to the task folder is the run's own bookkeeping, not work the
-  // agent abandoned — most often the deleted `-TODO` half of a rename whose
-  // `-DONE` side it committed alone (task-013). preflight commits exactly this on
-  // the next tick, so parking it here only stranded the card: the early return
-  // below skipped the rename check, the push, the issue and closeLoop entirely.
-  if (left.length && left.every((p) => p.startsWith(dir + "/"))) {
-    await commitTaskDir(
-      repoPath,
-      dir,
-      `docs(todo): finish ${filename} bookkeeping (runner)`,
-    );
-    ({ stdout: after } = await git(["rev-parse", "HEAD"], repoPath));
-    left = await dirtyPaths(repoPath);
-  }
-
-  // Our file specifically, not "something numbered NNN" — a second task can share
-  // the number, and then a namesake's -TODO would read as "we never renamed ours".
-  const renamed = !listPending(repoPath, dir).some((p) => p.name === filename);
-
   if (left.length) {
-    // A dirty finish is real work the agent never committed. preflight blocks on
-    // any dirt, so left as-is it wedges this task and every card queued after it.
-    // We cannot guess what belongs in a commit, so park it (recoverable) and warn.
-    const parked = await park();
+    // A dirty finish is real work the agent never committed. We cannot guess what
+    // belongs in a commit, so it is parked (recoverable) with a warning.
     const why = [
       renamed ? null : `${filename} was never renamed to -DONE`,
       parked
@@ -670,12 +703,18 @@ async function runRepo(repoName, repoPath) {
   }
 
   await say("finished", { costUsd });
+  if (!caughtUp) {
+    // A person has the clone dirty or on another branch. The work is on origin;
+    // reconcile moves the card once preflight has the clone caught up.
+    log(`⚠ ${filename} — landed, but the clone is not on origin/${base} yet`);
+    return true;
+  }
   return closeOut({
     repoName,
     repoPath,
     dir,
     filename,
-    renamed,
+    renamed: !listPending(repoPath, dir).some((p) => p.name === filename),
     moved: after.trim() !== before.trim(),
     output,
     tier,
@@ -836,11 +875,14 @@ async function finishPrRun({
     );
     return true;
   }
-  // The agent may have pushed the branch itself; with no PR on it, it is litter.
-  if (shipped.bookkeeping)
+  // The agent may have pushed the branch itself; with no PR on it, it is litter —
+  // and so is the local branch, whose change is now on the base branch.
+  if (shipped.bookkeeping) {
     await git(["push", "origin", "--delete", shipped.branch], repoPath).catch(
       () => {},
     );
+    await git(["branch", "-D", shipped.branch], repoPath).catch(() => {});
+  }
   return closeOut({
     repoName,
     repoPath,
@@ -1025,6 +1067,8 @@ async function check() {
       : [];
     const dirty = await dirtyPaths(repoPath).catch(() => []);
     if (dirty.length) log(`  dirty: ${dirty.slice(0, 6).join(", ")}`);
+    for (const t of await runnerTrees(repoPath).catch(() => []))
+      log(`  worktree: ${t}`);
     if (blocked[name]) log(`  ⛔ blocked: ${blocked[name]}`);
     const pending = listPending(repoPath, dir);
     const ours = new Set(mine(pending, isMine).map((p) => p.name));

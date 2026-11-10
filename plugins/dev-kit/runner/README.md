@@ -8,10 +8,11 @@ endpoint.
 card enters the agent list on todzz
    └─ server writes NNN-slug-TODO.md and pushes            (task-014)
        └─ runner tick: clean the tree, return to base, pull
-           └─ claude in a herdr pane  →  visible on the phone
-               ├─ needs you  →  Pushbullet  →  answer in the relay PWA
-               └─ /todo renames to NNN-slug-DONE.md, commits, pushes
-                   └─ runner moves the card, Results on card + issue
+           └─ the task's own worktree, ~/.kanban-runner/worktrees/<repo>/<stem>
+               └─ claude in a herdr pane  →  visible on the phone
+                   ├─ needs you  →  Pushbullet  →  answer in the relay PWA
+                   └─ /todo renames to NNN-slug-DONE.md, commits, pushes
+                       └─ runner lands it, removes the worktree, moves the card
 ```
 
 The `-DONE.md` rename **is** the state. No database, no marker files — restart is safe.
@@ -111,14 +112,17 @@ self-healed or announced exactly once, on the edge.
 | ----- | -------------------- |
 | Dirt only inside the task folder | Commits it as `chore(todo): checkpoint uncommitted agent output` and carries on — that is a half-finished agent run, not your work |
 | Dirt anywhere else | Skips the repo and sends **⛔ blocked** listing the paths. Silent on every later tick, except **⛔ task waiting** once for each new task origin queues for this machine meanwhile (it fetches, never pulls); **▶ unblocked** when the tree is clean again |
-| On a task branch with unpushed commits | Pushes the branch, returns to the base branch, sends **↗ task on a branch**. Nothing is lost and the queue keeps moving; you merge when ready |
-| On a task branch already merged | Silently returns to the base branch |
+| The clone on a task branch with unpushed commits | Pushes the branch, returns to the base branch, sends **↗ task on a branch**. Nothing is lost and the queue keeps moving; you merge when ready |
+| The clone on a task branch already merged | Silently returns to the base branch |
 | Detached HEAD, unreachable origin, diverged base | Skips with **⛔ blocked** naming which one |
 | A run that ends **clean** but never renamed the file | Finishes the bookkeeping the agent skipped — renames to `-DONE`, notes it, commits, pushes, moves the card — and reports **✔**. A clean tree means nothing was left half-done, so this is the common "already complete / nothing to do" ending, not a failure |
-| A run that ends with the tree **dirty** | **⚠ did not finish**: parks the uncommitted work in a stash (recoverable with `git stash pop`) and names what was left. Exit 0 only means the agent stopped talking, so this is checked, never assumed |
+| A run that ends with its tree **dirty** | **⚠ did not finish**: parks the uncommitted work in a stash (recoverable with `git stash pop` from the clone — stashes are shared with the worktree) and names what was left. Exit 0 only means the agent stopped talking, so this is checked, never assumed. The dirt was in the task's worktree, never the clone, so the next task starts regardless |
+| A session that switched branch, rebased halfway or broke its tree | Only its worktree is affected: no agent ever runs in the clone (see *Every task in its own worktree*). Commits on a branch of the session's own making are pushed there with **↗ task on a branch**, never landed on the base branch |
+| Its commits will not land (rebase conflict, push refused) | **✘ did not land**: the worktree stays with the work in it, and the next attempt continues there. The clone and every other task move on |
+| A worktree left behind (its pane still worked, a usage-limit retry, a runner restart) | Each tick sweeps the repo's worktrees: one whose task is finished in it or no longer queued, with no live pane, is landed (push-to-main) or removed when nothing on it is lost (pull request repo). Its local branch goes once it is all on origin, and so does its trust entry in `~/.claude.json` |
 | A task that runs but keeps leaving the tree dirty | Two attempts, then **⏭ stuck task** once and that number is skipped so the queue advances. Editing the task file resets the count |
 | The second attempt at a task | Runs `/todo NNN <note>`: the note says how attempt 1 ended (the reason, the stash commit holding its work, its `NNN-slug.log`), so it resumes instead of starting cold. The note lives in state.json, never in the task file, because editing the file resets the count. Attempt 1 is always the bare `/todo NNN` |
-| A card dragged out of the agent list mid-run | The tick loop is parked inside the run, so the run watches its own card: every `pollSeconds` it fetches origin's base branch into a private ref (never a pull, never `origin/*`, so it cannot race the agent's own `git pull`). Once the task was seen there and then has no `-TODO`/`-DONE`/`-BLOCKED` file left — renamed back to a draft or deleted — it closes the pane and kills its own `herdr` wait (a pending `agent wait` ignores its tab closing until it times out). Commits the agent made but never pushed are soft-reset, then everything is stashed and **⏹ stopped — card left the agent list** names the stash. The attempt is given back; moving the card back writes a fresh `-TODO` that queues normally. In a pull-request repo the worktree's dirt is stashed and the worktree closed; its branch keeps any commits for the next run |
+| A card dragged out of the agent list mid-run | The tick loop is parked inside the run, so the run watches its own card: every `pollSeconds` it fetches origin's base branch into a private ref (never a pull, never `origin/*`, so it cannot race the agent's own `git pull`). Once the task was seen there and then has no `-TODO`/`-DONE`/`-BLOCKED` file left — renamed back to a draft or deleted — it closes the pane and kills its own `herdr` wait (a pending `agent wait` ignores its tab closing until it times out). Commits the agent made but never pushed are soft-reset (push-to-main repos), then the worktree's dirt is stashed, the worktree closed, and **⏹ stopped — card left the agent list** names the stash. The attempt is given back; moving the card back writes a fresh `-TODO` that queues normally. In a pull-request repo the branch keeps any commits for the next run |
 
 Attempt counts and blocked reasons live in `~/.kanban-runner/state.json` — deliberately
 outside every repo, so runner bookkeeping can never dirty a working tree. Delete the file
@@ -301,11 +305,36 @@ Each tick (one per `pollSeconds`), for each configured repo:
    made the newer of the pair invisible the moment the server wrote it.
 4. Read the `> Run with:` frontmatter line (written by task-014). Classify with a
    cheap Claude call if the line is missing; default to `Sonnet 5 / medium` on failure.
-5. Run `/todo NNN` — in a herdr tab when `useHerdr` is on, otherwise as
-   `claude -p "/todo NNN" --model … --effort …`.
-6. Save the full session output next to the task file as `NNN-slug.log`, and push the
-   last 15 lines to the phone (success and failure alike).
-7. If HEAD advanced (i.e. `/todo` committed), `git push origin HEAD`.
+5. Open the task's worktree (see below) and run `/todo NNN` there — in a herdr tab when
+   `useHerdr` is on, otherwise as `claude -p "/todo NNN" --model … --effort …`.
+6. Save the full session output next to the task file in the clone as `NNN-slug.log`,
+   and push the last 15 lines to the phone (success and failure alike).
+7. Land what the session committed on the base branch, remove the worktree,
+   fast-forward the clone, and close the card.
+
+### Every task in its own worktree
+
+No agent ever runs in the clone (#91). A dirty tree, a branch switch or a rebase left
+halfway used to sit in the clone and stall every later task in the repo (tasks 005, 026,
+046, 060). Now each task gets `~/.kanban-runner/worktrees/<repo>/<stem>`, with the clone's
+gitignored secrets and, with a lockfile, `npm ci` (the pane opens after it; the journal
+says `npm ci in the new worktree`).
+
+- **Push-to-main repos** run on branch `run/<stem>`, made from the clone's `HEAD` and
+  tracking `origin/main`, so the agent's `git pull` works as usual. `/todo` pushes with
+  `git push origin HEAD:main` (git will not check `main` out twice). When the session
+  ends, the runner commits task-folder-only dirt, parks the rest in a stash, rebases
+  anything unpushed onto `origin/main` and pushes it, removes the worktree and its
+  branch, and fast-forwards the clone. An older `/todo` that runs `git push origin main`
+  pushes nothing of its own, and the runner lands its commits all the same.
+- **Pull-request repos** run on `todo/<stem>` and ship as a PR (see *Pull-request repos*).
+- **Kept** while its pane still works, for the retry after a usage limit (which reuses it
+  as it is), and when its work would not land. The sweep removes it once its task is over.
+- **Cleaned up** with it: the `node_modules`, the local branch once it is all on origin
+  (and, once per runner start, every `run/*` / `todo/*` branch already on origin), the
+  empty `<repo>` folder and the dead trust entries in `~/.claude.json`. Stashes stay — they
+  are the recovery copy. Claude's own transcripts of a worktree stay in
+  `~/.claude/projects/` for Claude Code's 30-day cleanup.
 
 **Follow-ups get an issue first.** Whenever a repo's HEAD moves, a new suffixless
 `NNN-slug.md` with no card of its own — split out by an agent, under the runner or
@@ -440,7 +469,7 @@ there is", which is what every existing install keeps doing.
 
 A repo in `pullRequests` never gets code from the runner on its base branch:
 
-1. **Each task runs in its own worktree** — `~/.kanban-runner/worktrees/<repo>/<stem>`, on
+1. **Each task runs in its own worktree**, like every task — `~/.kanban-runner/worktrees/<repo>/<stem>`, on
    branch `todo/<stem>`, from a fresh `origin/main` (or from `origin/todo/<stem>` when an
    earlier attempt pushed one, or from the local branch when it holds that and more). The
    tree gets the clone's gitignored secrets and, with a
@@ -565,7 +594,7 @@ with its zone (`08/11/2026, 00:11 EET`).
 
 | Flag            | Effect                                              |
 | --------------- | --------------------------------------------------- |
-| `--check`       | Connected boards and any not yet onboarded, then per repo: path, current branch, task folder, dirty paths, blocked reason, pending tasks with attempt counts — plus whether the herdr server is up. Runs nothing |
+| `--check`       | Connected boards and any not yet onboarded, then per repo: path, current branch, task folder, dirty paths, open runner worktrees, blocked reason, pending tasks with attempt counts — plus whether the herdr server is up. Runs nothing |
 | `--once`        | Run a single tick and exit. For tests and manual pokes |
 | `--interactive` | Legacy tmux mode: drop `--dangerously-skip-permissions`; inherit stdin |
 
@@ -591,7 +620,7 @@ silent no-op and nothing else changes.
 | `Runner ⛔ task waiting` | a new task for this machine landed on origin while its repo is blocked |
 | `Runner ↗ task on a branch` | work was left on a task branch, pushed, waiting for your merge |
 | `Runner ⇄ PR` / `Runner ✘ → draft PR` | a pull-request repo's session ended on its PR — opened by the agent, or as a draft by the runner (after a failure, with what the session left) |
-| `Runner ✘ branch did not ship` / `Runner ✘ no worktree` | a task branch would not push, or its worktree would not open; the work stays in the worktree |
+| `Runner ✘ branch did not ship` / `Runner ✘ did not land` / `Runner ✘ no worktree` | a task branch would not push, a push-to-main run's commits would not rebase or push onto the base branch, or its worktree would not open; the work stays in the worktree |
 | `Runner ⚠ did not finish` | the agent stopped without renaming the file or committing |
 | `Runner ⏭ stuck task` | two runs, no `-DONE` rename; the task is skipped |
 | `Runner ＋ new repo` | a newly connected board was cloned, scaffolded and is now watched |
@@ -622,7 +651,9 @@ silent no-op and nothing else changes.
 | `src/followup.js`| new follow-up file → GitHub issue → Backlog card, file renamed to the issue number |
 | `src/screenshots.js` | a UI task's screenshots → attachments on its card |
 | `src/claim.js`   | claim an Auto (unaddressed) task on its Kanban card before running it |
-| `src/worktree.js`| pull-request repos: a task's own branch and worktree, and shipping it as a PR |
+| `src/worktree.js`| a task's own branch and worktree, removing it again; for pull-request repos, shipping it as a PR |
+| `src/land.js`    | push-to-main repos: land a run's commits on the base branch from its worktree, catch the clone up |
+| `src/sweep.js`   | worktrees and branches a run left behind, put away once their task is over |
 | `src/pr.js`      | pull-request repos: what is in flight, finishing merged tasks, the review / stuck-merge sweep, `> After:` |
 | `src/rework.js`  | pull-request repos: a person's review comes back as a `reworkPr<N>` task |
 | `src/notify.js`  | Pushbullet |

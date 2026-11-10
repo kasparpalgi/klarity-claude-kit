@@ -137,6 +137,11 @@ Only when verification is green:
 git pull && git add -A && git commit -m "<conventional commit subject>" && git push origin main
 ```
 
+**On a `run/<NNN>-<slug>` branch, push with `git push origin HEAD:main`.** It is the
+runner's worktree for a push-to-main repo and stands in for `main` (it tracks
+`origin/main`): commit there and do not switch — git refuses, `main` is checked out
+elsewhere. Whatever you leave unpushed, the runner lands on `main` after you exit.
+
 **Pull-request repos never take that push.** When the project's `CLAUDE.md` says every
 change is a pull request — or the runner started you on a `todo/<NNN>-<slug>` branch in a
 worktree of its own — commit on that branch (stay on it; do not switch to `main`),

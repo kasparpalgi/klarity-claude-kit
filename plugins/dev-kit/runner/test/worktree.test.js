@@ -53,6 +53,7 @@ function setup() {
   chmodSync(join(bin, "gh"), 0o755);
   process.env.PATH = `${bin}:${process.env.PATH}`;
   process.env.KANBAN_RUNNER_WORKTREES = join(root, "worktrees");
+  process.env.CLAUDE_CONFIG_FILE = join(root, ".claude.json");
   const calls = () =>
     existsSync(join(root, "gh.log"))
       ? readFileSync(join(root, "gh.log"), "utf8").trim().split("\n")

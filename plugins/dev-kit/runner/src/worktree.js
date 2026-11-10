@@ -1,18 +1,26 @@
 /**
- * A pull request repo's task runs on its own branch, `todo/<stem>`, in its own
- * worktree — never in the clone the runner keeps on the base branch, and never in a
- * tree another session shares. When the session ends, what it left is committed to
- * that branch, pushed, and carried by a pull request: the base branch only ever gets
- * code through a merge.
+ * Every task runs in its own worktree — never in the clone the runner keeps on the
+ * base branch, and never in a tree another session shares (#91). A pull request
+ * repo's branch is `todo/<stem>`: when the session ends, what it left is committed to
+ * that branch, pushed, and carried by a pull request, so the base branch only ever
+ * gets code through a merge. A push-to-main repo's is `run/<stem>`, landed on the base
+ * branch from the worktree (land.js).
  */
 
 import { execFile } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  rmdirSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { dirtyPaths, git } from "./repo.js";
 import { secretsOf } from "./secrets.js";
+import { untrustGone } from "./trust.js";
 
 const run = promisify(execFile);
 const out = async (args, cwd) => (await git(args, cwd)).stdout.trim();
@@ -25,8 +33,10 @@ const gh = async (args, cwd) =>
   (await run("gh", args, { cwd, timeout: 60_000 })).stdout.trim();
 
 export const branchOf = (stem) => `todo/${stem}`;
+/** A push-to-main run's branch: never pushed, it only carries the run to the base. */
+export const runBranchOf = (stem) => `run/${stem}`;
 
-const root = () =>
+export const root = () =>
   process.env.KANBAN_RUNNER_WORKTREES ??
   join(homedir(), ".kanban-runner", "worktrees");
 
@@ -34,36 +44,30 @@ export const worktreeOf = (repoPath, stem) =>
   join(root(), basename(repoPath), stem);
 
 /**
- * The task's worktree, made on first use: on `origin/todo/<stem>` when an earlier
- * attempt pushed one, else on a fresh `origin/<base>` — or on the local branch when it
- * already holds that and more, such as bookkeeping that did not land. One left by an
- * attempt that hit the usage limit is reused as it is. A new tree gets the clone's gitignored secrets
- * and, with a lockfile, `npm ci` — a session cannot test without either.
+ * The task's worktree, made on first use. One left by an attempt that hit the usage
+ * limit is reused as it is. A new tree gets the clone's gitignored secrets and, with a
+ * lockfile, `npm ci` — a session cannot test without either. `direct` is a push-to-main
+ * repo's (addRun), else a pull request repo's (addPr).
  */
-export async function openWorktree(repoPath, stem, base, log = () => {}) {
+export async function openWorktree(
+  repoPath,
+  stem,
+  base,
+  log = () => {},
+  { direct = false } = {},
+) {
   const path = worktreeOf(repoPath, stem);
   if (existsSync(join(path, ".git"))) return path;
-  const branch = branchOf(stem);
   await git(["worktree", "prune"], repoPath);
-  await git(["fetch", "--prune", "origin"], repoPath);
-  const pushed = await ok(
-    ["rev-parse", "--verify", "-q", `refs/remotes/origin/${branch}`],
-    repoPath,
-  );
-  const start = pushed ? `origin/${branch}` : `origin/${base}`;
-  const keep = await ok(
-    ["merge-base", "--is-ancestor", start, `refs/heads/${branch}`],
-    repoPath,
-  );
   mkdirSync(dirname(path), { recursive: true });
   rmSync(path, { recursive: true, force: true });
-  await git(
-    keep
-      ? ["worktree", "add", path, branch]
-      : ["worktree", "add", "--no-track", "-B", branch, path, start],
-    repoPath,
-  );
-  for (const f of Object.keys(await secretsOf(repoPath))) {
+  const on = await (direct ? addRun : addPr)(repoPath, path, stem, base);
+  // With the clone's own Claude settings (permissions, MCP approvals) when git ignores them.
+  const local = join(".claude", "settings.local.json");
+  const carried = Object.keys(await secretsOf(repoPath));
+  if (existsSync(join(repoPath, local)) && !existsSync(join(path, local)))
+    carried.push(local);
+  for (const f of carried) {
     mkdirSync(dirname(join(path, f)), { recursive: true });
     copyFileSync(join(repoPath, f), join(path, f));
   }
@@ -82,16 +86,83 @@ export async function openWorktree(repoPath, stem, base, log = () => {}) {
         log(`  npm ci failed in the worktree: ${err.message.split("\n")[0]}`),
     );
   }
-  log(
-    `  worktree ${path} on ${branch}${pushed ? " (continuing its pushed branch)" : ""}`,
-  );
+  log(`  worktree ${path} on ${on}`);
   return path;
 }
 
+/**
+ * On `origin/todo/<stem>` when an earlier attempt pushed one, else on a fresh
+ * `origin/<base>` — or on the local branch when it already holds that and more, such
+ * as bookkeeping that did not land.
+ */
+async function addPr(repoPath, path, stem, base) {
+  const branch = branchOf(stem);
+  await git(["fetch", "--prune", "origin"], repoPath);
+  const pushed = await ok(
+    ["rev-parse", "--verify", "-q", `refs/remotes/origin/${branch}`],
+    repoPath,
+  );
+  const start = pushed ? `origin/${branch}` : `origin/${base}`;
+  const keep = await ok(
+    ["merge-base", "--is-ancestor", start, `refs/heads/${branch}`],
+    repoPath,
+  );
+  await git(
+    keep
+      ? ["worktree", "add", path, branch]
+      : ["worktree", "add", "--no-track", "-B", branch, path, start],
+    repoPath,
+  );
+  return `${branch}${pushed ? " (continuing its pushed branch)" : ""}`;
+}
+
+/**
+ * From the clone's HEAD, which preflight just brought up to origin (plus the runner's
+ * own unpushed commits, such as the log ignores). It tracks origin's base, so the
+ * agent's `git pull` works as it does on `main`. A `run/<stem>` still here holds work
+ * that did not land, and is continued.
+ */
+async function addRun(repoPath, path, stem, base) {
+  const branch = runBranchOf(stem);
+  const kept = await ok(
+    ["rev-parse", "--verify", "-q", `refs/heads/${branch}`],
+    repoPath,
+  );
+  await git(
+    kept
+      ? ["worktree", "add", path, branch]
+      : ["worktree", "add", "-b", branch, path, "HEAD"],
+    repoPath,
+  );
+  await git(["branch", "--set-upstream-to", `origin/${base}`], path);
+  return `${branch}${kept ? " (continuing its unlanded commits)" : ""}`;
+}
+
+/** True when every commit on `ref` is on origin: dropping the local ref loses nothing. */
+export const onOrigin = async (ref, cwd) =>
+  Boolean(
+    await out(
+      ["for-each-ref", "--count=1", "--contains", ref, "refs/remotes/origin"],
+      cwd,
+    ).catch(() => ""),
+  );
+
+/**
+ * Remove a task's worktree with its `node_modules`, then what it leaves behind: its
+ * branch once that is all on origin, an empty repo folder, and the trust entries of
+ * worktrees that are gone (one per task in ~/.claude.json otherwise).
+ */
 export async function closeWorktree(repoPath, path) {
+  const branch = await out(["branch", "--show-current"], path).catch(() => "");
   if (!(await ok(["worktree", "remove", "--force", path], repoPath)))
     rmSync(path, { recursive: true, force: true });
   await git(["worktree", "prune"], repoPath);
+  if (branch && (await onOrigin(`refs/heads/${branch}`, repoPath)))
+    await ok(["branch", "-D", branch], repoPath);
+  try {
+    rmdirSync(dirname(path)); // only when empty
+  } catch {}
+  untrustGone(root());
 }
 
 /** The open PR for `branch`, or null. */

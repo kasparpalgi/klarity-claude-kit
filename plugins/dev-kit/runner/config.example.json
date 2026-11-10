@@ -4,6 +4,7 @@
 	"machine": "mac",
 	"useHerdr": true,
 	"unattended": true,
+	"remoteControl": true,
 	"taskMinutes": 45,
 	"classifier": "Opus / low",
 	"blockedMinutes": 30,

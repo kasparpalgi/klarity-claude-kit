@@ -32,6 +32,14 @@ export const numberOf = (name) => /^(\d+)-/.exec(name)?.[1] ?? null;
 /** `019-task012Fix` — a task's identity across its -TODO/-DONE/-BLOCKED lives. */
 export const stemOf = (name) => name.replace(/-(TODO|DONE|BLOCKED)\.md$/i, "");
 
+/**
+ * The run's title in claude.ai/code and the Claude app (#85), e.g.
+ * `svelte-hasura-boilerplate-085-see082`. herdr hands argv on through a shell,
+ * so only shell-safe characters.
+ */
+export const sessionName = (repoName, filename) =>
+  `${repoName.split("/").pop()}-${stemOf(filename)}`.replace(/[^\w.-]+/g, "-");
+
 /** `> After: #78, #80` — the PRs or issues that must land before this task may run. */
 export const afterOf = (text) =>
   [

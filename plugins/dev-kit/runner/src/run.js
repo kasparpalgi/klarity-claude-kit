@@ -37,6 +37,7 @@ import {
   listPending,
   pick,
   retired,
+  sessionName,
   stemOf,
   todoDir,
 } from "./queue.js";
@@ -165,17 +166,28 @@ async function runTask({
   // cloned by the peer, never passed through onboarding.
   if (trustProject(cwd)) log("  trusted the folder for Claude");
   if (cfg.useHerdr && (await herdrUp())) {
+    // Remote Control needs a TTY, so only the pane gets it, never `-p` (#85).
+    const remote = cfg.remoteControl
+      ? ["--remote-control", sessionName(repoName, filename)]
+      : [];
     const r = await runInHerdr({
       name: `task-${number}`,
       cwd,
       prompt,
       args: cfg.unattended
-        ? [...model, "--dangerously-skip-permissions"]
-        : [...model, "--permission-mode", "acceptEdits"],
+        ? [...model, ...remote, "--dangerously-skip-permissions"]
+        : [...model, ...remote, "--permission-mode", "acceptEdits"],
       taskMs: cfg.taskMinutes * 60000,
       done: () => retired(cwd, dir, stemOf(filename)),
       signal,
       blockedMs: cfg.blockedMinutes * 60000,
+      // The card's status line links the session in claude.ai/code and the app.
+      onRemote: remote.length
+        ? (url) => {
+            log(`  remote control: ${url}`);
+            return say("running", { url });
+          }
+        : null,
       onBlocked: async (pane) => {
         await say("needs");
         await notify(

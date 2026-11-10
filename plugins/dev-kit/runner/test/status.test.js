@@ -126,3 +126,12 @@ test("a Hasura error is a log line, not a failed run", async () => {
   await say("failed");
   assert.deepEqual(lines, ["  status comment: boom", "  status comment: boom"]);
 });
+
+test("the Remote Control link, once known, stays on every later line (#85)", async () => {
+  const { kanban, comments } = fakeKanban();
+  const say = await openStatus(kanban, { ...run, repoName: "o/r", todoId: CARD });
+  const url = "https://claude.ai/code/session_01ABC";
+  await say("running", { url });
+  await say("finished", { costUsd: 1.5 });
+  assert.match(comments[0].content, /^■ Finished .* · \$1\.50 · https:\/\/claude\.ai\/code\/session_01ABC$/);
+});

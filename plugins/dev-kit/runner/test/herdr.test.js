@@ -150,3 +150,18 @@ test("an aborted run closes its tab and stops waiting at once (#73)", async () =
   assert.equal(r.live, false);
   assert.equal(r.output, "transcript\n");
 });
+
+test("a Remote Control pane hands its claude.ai link over once it connects (#85)", async () => {
+  fakeHerdr(`"agent read") echo "/remote-control is active · https://claude.ai/code/session_01RBX" ;;`);
+  const urls = [];
+  await run({ onRemote: (u) => urls.push(u) });
+  assert.deepEqual(urls, ["https://claude.ai/code/session_01RBX"]);
+});
+
+test("a pane that never shows the link still runs, without one", async () => {
+  fakeHerdr();
+  const urls = [];
+  const r = await run({ onRemote: (u) => urls.push(u) });
+  assert.equal(r.code, 0);
+  assert.deepEqual(urls, []);
+});

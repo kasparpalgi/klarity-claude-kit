@@ -36,7 +36,7 @@ const hhmm = (ms) =>
 /** `▶ Running on dell since 14:02 · Opus 5.5 / xhigh · attempt 1`, and its siblings. */
 export function statusLine(
   kind,
-  { machine, startMs, endMs, tier, attempt, costUsd, note },
+  { machine, startMs, endMs, tier, attempt, costUsd, note, url },
 ) {
   const open = kind === "running" || kind === "needs";
   const span = open
@@ -48,6 +48,7 @@ export function statusLine(
     `attempt ${attempt}`,
     costUsd != null ? `$${costUsd.toFixed(2)}` : null,
     note,
+    url,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -107,8 +108,11 @@ export async function openStatus(
       log?.(`  status comment: ${err.message}`);
     }
   };
-  const say = (kind, extra = {}) =>
-    write(statusLine(kind, { ...run, endMs: Date.now(), ...extra }));
+  const say = (kind, extra = {}) => {
+    // The Remote Control link (#85) stays on every later line, finish included.
+    if (extra.url) run.url = extra.url;
+    return write(statusLine(kind, { ...run, endMs: Date.now(), ...extra }));
+  };
   await say("running");
   return say;
 }

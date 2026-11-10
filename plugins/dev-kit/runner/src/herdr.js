@@ -113,6 +113,19 @@ const readPane = async (name) => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** What a `--remote-control` session prints once it connects (#85). */
+const REMOTE_URL = /https:\/\/claude\.ai\/code\/session_\w+/;
+
+/** The session's claude.ai/code link. Connecting takes a few seconds; null if it never shows. */
+async function remoteUrl(name, gapMs) {
+  for (let i = 0; i < 5; i++) {
+    const m = REMOTE_URL.exec(await readPane(name));
+    if (m) return m[0];
+    await sleep(gapMs);
+  }
+  return null;
+}
+
 /**
  * Claude ends its turn to wait on a background job — the footer then reads
  * "2 shells, 1 monitor" — and herdr calls that idle. It is not finished: the
@@ -167,8 +180,18 @@ async function promptAgent(name, prompt, taskMs, signal) {
  * within blockedMs of total wall clock.
  */
 export async function runInHerdr(opts) {
-  const { name, cwd, args, prompt, taskMs, blockedMs, onBlocked, done, signal } =
-    opts;
+  const {
+    name,
+    cwd,
+    args,
+    prompt,
+    taskMs,
+    blockedMs,
+    onBlocked,
+    onRemote,
+    done,
+    signal,
+  } = opts;
   const pollMs = opts.pollMs ?? 30000;
   const end = Date.now() + taskMs;
   // False until a wait actually hands us an agent. `agent start` resolving is
@@ -235,6 +258,10 @@ export async function runInHerdr(opts) {
     const first = await waitFor(name, SETTLED, 60000, signal);
     started = true;
     await clear(first.agent);
+    if (onRemote) {
+      const url = await remoteUrl(name, Math.min(pollMs, 2000));
+      if (url) await onRemote(url);
+    }
     // A still-blocked agent makes promptAgent fail with agent_blocked, below.
     let agent = await clear(
       (await promptAgent(name, prompt, taskMs, signal)).agent,
@@ -256,7 +283,12 @@ export async function runInHerdr(opts) {
     const stuck = agent.agent_status === "blocked";
     if (!stuck && !signal?.aborted)
       return { code: 0, output: await pane(), started };
-    return { code: 1, output: await pane(), started, live: stuck && !signal?.aborted };
+    return {
+      code: 1,
+      output: await pane(),
+      started,
+      live: stuck && !signal?.aborted,
+    };
   } catch (err) {
     // A herdr timeout or CLI error is a stuck run, not a crash: keep the log.
     // Our wait running out is not the agent stopping — `live` says it still

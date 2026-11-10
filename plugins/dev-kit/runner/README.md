@@ -185,6 +185,27 @@ questions to the same session from the phone. This is a courtesy, not a gate:
   runner now finishes that bookkeeping itself on a clean tree — see the guard table above —
   so this no longer leaves a dead queue slot to rename by hand.
 
+### Remote Control — the same run in the Claude app
+
+Set `"remoteControl": true` and the pane starts as
+`claude --remote-control <repo>-<NNN-slug>` (svelte-hasura-boilerplate#85). The run
+then also shows in **claude.ai/code** and the **Claude app** (Code tab), with diffs, a
+chat UI and image attachments, and you can type to it from there. The card's live status
+line ends with the session's `https://claude.ai/code/session_…` link, so one tap from the
+board opens it. herdr and Pushbullet keep working exactly as before. The app is a second
+window, not a replacement, and the runner still decides everything from the pane.
+
+- **Per machine, off by default.** A session lands in the account that machine's `claude`
+  is logged in to. Turn it on only where that account is yours. Karel's is (checked in #85); check
+  another machine with `claude auth status`.
+- **No first-run dialog.** Measured on 2.1.322: the `--remote-control` flag connects
+  without the "Enable Remote Control?" question that `claude remote-control` and
+  `/remote-control` ask, so the pane never waits on it.
+- **Headless runs don't get it.** Remote Control needs an interactive session, so the
+  `-p` fallback runs without it.
+- **Native push.** To have the Claude app ping you too, run `/config` in `claude` once on
+  that machine and turn on *Push when actions required*.
+
 ## Headless mode (launchd)
 
 Runs in the background, unattended. Claude uses `--dangerously-skip-permissions` — it
@@ -337,6 +358,7 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 | `repos`          | `"owner/repo"` → local clone path; `~/` is expanded at runtime  |
 | `useHerdr`       | run Claude in a herdr pane, visible on the phone (default false) |
 | `unattended`     | on the herdr path, skip permissions instead of asking (true here) |
+| `remoteControl`  | on the herdr path, also open the session in claude.ai/code and the Claude app (default false). See *Remote Control* below |
 | `taskMinutes`    | cap on one `/todo` run (default 240) — only a still-`working` agent ever reaches it, so it guards against a hung agent, not a long task. At 45, Opus/high tasks with an E2E run were parked mid-work and re-run (tekdok 034, kanban 206) |
 | `blockedMinutes` | how long to wait for a human to answer a prompt (default 30)    |
 | `machine`        | this computer's id — a string or a list of spellings it answers to. Unset means it is the only runner and takes every task |

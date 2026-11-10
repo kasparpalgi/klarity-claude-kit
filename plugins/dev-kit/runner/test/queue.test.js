@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { blockedFile, listPending, numberOf, retired } from "../src/queue.js";
+import {
+  blockedFile,
+  listPending,
+  numberOf,
+  retired,
+  sessionName,
+} from "../src/queue.js";
 
 /** A throwaway repo whose task folder holds exactly `names`. */
 function repo(names) {
@@ -80,4 +86,12 @@ test("a finished task does not retire a different task sharing its number", () =
     listPending(path, ".").map((p) => p.name),
     ["019-task012Fix-TODO.md"],
   );
+});
+
+test("names a run for the Claude app with shell-safe characters only", () => {
+  assert.equal(
+    sessionName("klarity/svelte-hasura-boilerplate", "085-see082-TODO.md"),
+    "svelte-hasura-boilerplate-085-see082",
+  );
+  assert.match(sessionName("me/app", "012-a b;c$(x)-TODO.md"), /^app-012-[\w.-]+$/);
 });

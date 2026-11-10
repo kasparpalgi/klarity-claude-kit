@@ -1,6 +1,6 @@
 {
   "name": "kanban-runner",
-  "version": "0.29.1",
+  "version": "0.30.0",
   "private": true,
   "description": "Watch the Kanban TODO column and run /todo in the matching repo.",
   "type": "module",
@@ -12,7 +12,8 @@
     "check": "node src/run.js --check",
     "test": "node --test test/*.test.js",
     "onboard": "node src/onboard.js",
-    "sync-secrets": "node src/secrets.js"
+    "sync-secrets": "node src/secrets.js",
+    "tiers": "node scripts/tiers.mjs"
   },
   "engines": {
     "node": ">=20"

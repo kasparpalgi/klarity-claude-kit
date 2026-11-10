@@ -481,16 +481,27 @@ Everything lives in one table, `FAMILIES` in `src/classify.js`:
 | Family   | Versions           | Latest | Default effort |
 | -------- | ------------------ | ------ | -------------- |
 | `fable`  | 5.1                | 5.1    | high           |
-| `opus`   | 4.6, 4.8, 5        | 5      | high           |
-| `sonnet` | 4.6, 5             | 5      | medium         |
+| `opus`   | 4.6, 4.8, 5, 5.5   | 5.5    | high           |
+| `sonnet` | 4.6, 5, 5.5        | 5.5    | medium         |
 | `haiku`  | 4.5                | 4.5    | low            |
 | `gemini` | 3.8 (Flash, free)  | 3.8    | medium — only low/medium/high |
 
 Add a version by putting its model id in that family's `versions`.
 
-With no `Run with:` line at all, a cheap haiku call picks a *family* (version and effort
-stay at that family's defaults) and falls back to `Sonnet 5 / medium`. Fable is never
-auto-chosen — it bills usage credits, so it has to be asked for by name.
+With no `Run with:` line at all (model **Auto** on the card), one `claude -p` call picks
+a *family and effort*; the version is that family's latest. Any trouble falls back to
+`Sonnet 5.5 / medium`. Fable is never auto-chosen — it bills usage credits, so it has to
+be asked for by name.
+
+Who makes that call is `config.json`'s `classifier`, written like a `Run with:` line:
+`"classifier": "Opus / low"` is the default. The call reads ~500 characters and answers
+two words, so the strongest model costs next to nothing and judges best. Gemini cannot be
+the judge (it runs through aider), so naming it falls back to the default.
+
+**Is the tier worth it?** `npm run tiers -- --days 30` prints one row per model / effort
+from the `claude_usage` rows every run records: sessions, cards, sessions per card (above
+1 means retries), median minutes and output tokens, and cost. Effort is the card's;
+`auto` means the card left it unset. Cost reads 0 for a model LiteLLM has not priced yet.
 
 Task-014 writes the line from the card's model/effort fields, so the tier is normally
 chosen from the board rather than typed.

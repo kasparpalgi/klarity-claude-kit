@@ -392,7 +392,9 @@ async function runRepo(repoName, repoPath) {
     filename.replace(/-TODO\.md$/i, "") + ".log",
   );
   const content = readFileSync(join(repoPath, dir, filename), "utf8");
-  const tier = explicitTier(content) ?? (await classify(content.slice(0, 500)));
+  const tier =
+    explicitTier(content) ??
+    (await classify(content.slice(0, 500), cfg.classifier));
   const attempt = state.addTry(repoName, taskStem, mtime);
   log(`▶ ${repoName} ${filename} (${tier.label}, attempt ${attempt})`);
   // Attempt 2+ hears how the one before ended (#72); attempt 1 is the bare /todo.

@@ -5,6 +5,7 @@
 	"useHerdr": true,
 	"unattended": true,
 	"taskMinutes": 45,
+	"classifier": "Opus / low",
 	"blockedMinutes": 30,
 	"repos": {
 		"klarity/svelte-hasura-boilerplate": "~/Documents/GitHub/svelte-hasura-boilerplate",

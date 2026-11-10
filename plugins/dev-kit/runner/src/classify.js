@@ -22,7 +22,7 @@ const FAMILIES = {
   opus: {
     name: "Opus",
     effort: "high",
-    latest: "5",
+    latest: "5.5",
     versions: {
       4.6: "claude-opus-4-6",
       4.8: "claude-opus-4-8",
@@ -33,7 +33,7 @@ const FAMILIES = {
   sonnet: {
     name: "Sonnet",
     effort: "medium",
-    latest: "5",
+    latest: "5.5",
     versions: {
       4.6: "claude-sonnet-4-6",
       5: "claude-sonnet-5",
@@ -77,41 +77,61 @@ function tier(family, version, effort) {
  * or just "Run with: haiku". A version we do not know falls back to the family's
  * latest rather than failing the run; same for an effort outside EFFORTS.
  */
-const NAMED =
-  /run with:[ \t]*(fable|opus|sonnet|haiku|gemini)[ \t]*(\d+(?:\.\d+)?)?[ \t]*(?:\/[ \t]*(\w+))?/i;
+const TIER =
+  /(fable|opus|sonnet|haiku|gemini)[ \t]*(\d+(?:\.\d+)?)?[ \t]*(?:\/[ \t]*(\w+))?/i;
+const NAMED = new RegExp(`run with:[ \\t]*${TIER.source}`, "i");
 
-export function explicitTier(text) {
-  const m = NAMED.exec(text || "");
-  return m ? tier(m[1].toLowerCase(), m[2], m[3]?.toLowerCase()) : null;
-}
+const tierOf = (m) =>
+  m ? tier(m[1].toLowerCase(), m[2], m[3]?.toLowerCase()) : null;
+
+export const explicitTier = (text) => tierOf(NAMED.exec(text || ""));
+
+/** A bare tier, as config.json's `classifier` names it: "Opus 5.5 / low". */
+export const parseTier = (text) => tierOf(TIER.exec(text || ""));
 
 /**
- * Otherwise ask the cheapest model which family fits. It picks a family only —
- * version and effort stay at that family's default. Fable is never auto-chosen:
- * it bills usage credits, so it has to be asked for by name.
+ * Otherwise ask a model which family and effort fit. Which model asks is
+ * config.json's `classifier` (default Opus / low): the call is a few hundred
+ * tokens, so the best judge costs next to nothing. Version stays the family's
+ * latest. Fable is never auto-chosen: it bills usage credits, so it has to be
+ * asked for by name.
  */
 const PROMPT = `Classify this development task by how much model it needs.
-Answer with exactly one word, nothing else:
+Answer with exactly two words, family then effort, nothing else.
+Family:
 opus - hard architecture, multi-system design, security-sensitive work
 sonnet - a normal feature, refactor or bugfix
 haiku - a mechanical edit: rename, copy change, config tweak
+Effort: low, medium, high, xhigh or max - how hard the model must think.
 
 Task:
 `;
 
+/** The classifier's reply -> a tier; null when it named no family. */
+export function readAnswer(stdout) {
+  const m =
+    /\b(opus|sonnet|haiku)\b(?:\W+(low|medium|high|xhigh|max)\b)?/i.exec(
+      stdout || "",
+    );
+  return m ? tier(m[1].toLowerCase(), undefined, m[2]?.toLowerCase()) : null;
+}
+
 /** Falls back to sonnet on any trouble — the classifier is a nicety, not a gate. */
-export async function classify(text) {
+export async function classify(text, by = "Opus / low", exec = run) {
   const explicit = explicitTier(text);
   if (explicit) return explicit;
 
+  // Gemini runs through aider, not `claude -p`, so it cannot be the judge.
+  const named = parseTier(by);
+  const judge = named && !named.engine ? named : parseTier("Opus / low");
   try {
-    const { stdout } = await run(
+    const { stdout } = await exec(
       "claude",
-      ["-p", PROMPT + text, "--model", "haiku"],
+      ["-p", PROMPT + text, "--model", judge.model, "--effort", judge.effort],
       { timeout: 60_000 },
     );
-    const word = /\b(opus|sonnet|haiku)\b/i.exec(stdout);
-    if (word) return tier(word[1].toLowerCase());
+    const picked = readAnswer(stdout);
+    if (picked) return picked;
   } catch {
     // classifier is a nicety, never a blocker
   }

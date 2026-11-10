@@ -25,6 +25,9 @@ export function loadConfig(
     // No phone watching: skip permissions instead of stalling on a prompt.
     unattended: file.unattended ?? false,
     taskMinutes: file.taskMinutes ?? 240,
+    // Who picks model + effort for a card left on Auto (classify.js). The call is
+    // tiny, so the strongest non-Fable model is the default judge.
+    classifier: file.classifier ?? "Opus / low",
     blockedMinutes: file.blockedMinutes ?? 30,
     // This computer's id. Unset means "the only machine" — take every task.
     // Set, and it takes tasks naming it plus unaddressed ones it claims (claim.js).

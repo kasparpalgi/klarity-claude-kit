@@ -110,10 +110,18 @@ export async function openStatus(
       log?.(`  status comment: ${err.message}`);
     }
   };
+  let last = ["running", {}];
   const say = (kind, extra = {}) => {
+    last = [kind, extra];
     // The Remote Control link (#85) stays on every later line, finish included.
     if (extra.url) run.url = extra.url;
     return write(statusLine(kind, { ...run, endMs: Date.now(), ...extra }));
+  };
+  // A link found mid-run (sessionLink.js) joins the line as it stands, whatever its kind.
+  say.link = (url) => {
+    if (run.url) return;
+    run.url = url;
+    return say(...last);
   };
   await say("running");
   return say;

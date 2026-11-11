@@ -83,6 +83,27 @@ test("posts one comment when the run starts and edits it after, never re-posting
   assert.match(comments[0].content, /^■ Finished on dell .* · \$1\.50$/);
 });
 
+test("a link found mid-run joins the line as it stands, once", async () => {
+  const { kanban, comments } = fakeKanban();
+  const say = await openStatus(kanban, {
+    ...run,
+    repoName: "o/r",
+    todoId: CARD,
+  });
+  await say("needs");
+  await say.link("https://claude.ai/code/session_01A");
+  assert.match(
+    comments[0].content,
+    /^⏸ Needs you .* · https:\/\/claude\.ai\/code\/session_01A$/,
+  );
+  await say.link("https://claude.ai/code/session_02B");
+  await say("finished", { costUsd: 1 });
+  assert.match(
+    comments[0].content,
+    /^■ Finished .* · \$1\.00 · https:\/\/claude\.ai\/code\/session_01A$/,
+  );
+});
+
 test("a retry takes over the unfinished attempt's comment; a finished one is kept", async () => {
   const { kanban, comments } = fakeKanban([
     { id: "old", content: "■ Finished on dell 09:00–09:30 · attempt 1" },

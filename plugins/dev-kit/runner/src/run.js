@@ -74,7 +74,8 @@ import { offboard } from "./offboard.js";
 import { selfUpdate } from "./selfUpdate.js";
 import { syncSecrets } from "./secrets.js";
 import { trustProject } from "./trust.js";
-import { recordUsage } from "./sessionUsage.js";
+import { projectDir, recordUsage } from "./sessionUsage.js";
+import { watchLink } from "./sessionLink.js";
 import { todoPrompt } from "./retry.js";
 import { costIn, openStatus } from "./status.js";
 import * as state from "./state.js";
@@ -487,6 +488,15 @@ async function runRepo(repoName, repoPath) {
       stop.abort();
     },
   });
+  // The card links the session in claude.ai/code as soon as its transcript names it (#221).
+  const unlink = watchLink({
+    dir: projectDir(cwd),
+    sinceMs: runStartMs,
+    onUrl: (url) => {
+      log(`  session: ${url}`);
+      return say.link(url);
+    },
+  });
   for (;;) {
     const r = await runTask({
       repoName,
@@ -515,6 +525,7 @@ async function runRepo(repoName, repoPath) {
     break;
   }
   unwatch();
+  unlink();
   const stopped = stop.signal.aborted;
   // The CLI only says the usage wall was hit after the fact. The 5-hour and the
   // weekly wall cover every model and effort, so a cheaper tier meets the same

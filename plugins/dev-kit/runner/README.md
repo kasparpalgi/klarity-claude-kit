@@ -207,6 +207,10 @@ window, not a replacement, and the runner still decides everything from the pane
   `/remote-control` ask, so the pane never waits on it.
 - **Headless runs don't get it.** Remote Control needs an interactive session, so the
   `-p` fallback runs without it.
+- **The link without the flag.** With `"remoteControlAtStartup": true` in a machine's
+  `~/.claude/settings.json`, every session is in claude.ai/code anyway. The runner reads
+  the link from the run's transcript (its `bridge-session` line) and adds it to the
+  status line as soon as it shows, `remoteControl` or not (svelte-todo-kanban#221).
 - **Native push.** To have the Claude app ping you too, run `/config` in `claude` once on
   that machine and turn on *Push when actions required*.
 
@@ -673,6 +677,7 @@ silent no-op and nothing else changes.
 | `src/classify.js`| model + effort tier for a task file |
 | `src/pricing.js` | LiteLLM price list → `claude_model_pricing` rows |
 | `src/sessionUsage.js` | read a run's transcript → one `claude_usage` row |
+| `src/sessionLink.js` | the run's claude.ai/code link, read from its transcript → the status line |
 | `src/status.js`  | the run's one live status comment on its card, edited as it goes |
 | `src/selfUpdate.js` | fast-forward the runner's own checkout so both machines run the same code |
 | `src/secrets.js` | gitignored secrets → the peers, on the sweep's clock; `npm run sync-secrets` by hand |

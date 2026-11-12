@@ -8,3 +8,5 @@ block reason to each task card's status comment (`status.js` — add a `waiting`
 `KINDS`; avoid `openStatus`'s initial "running" line flashing first). Document in `runner/README.md`.
 
 _GitHub issue #5 — end the commit subject with `(#5)`._
+
+_From Kanban card `49230ea2-fffe-4603-a244-e80a9aa02307`, moved to the agent list._

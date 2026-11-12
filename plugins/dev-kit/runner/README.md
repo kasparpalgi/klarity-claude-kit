@@ -146,9 +146,14 @@ shows up in `herdr agent list` and on the phone at `https://herdr.servicehost.io
 while it works. A bare child process is invisible to both.
 
 **The phone opens a pane in Conversation view** (relay 0.23.0+): only the prompt and the
-latest answer, with a **Speak** button — not the tool calls. For the live pane set the app's
-**Settings → Agents → Default View → Terminal**, or tap **Full history** once (remembered on
-the device). A per-pane choice does not carry over: each run is a new `task-NNN` pane.
+latest answer, with a **Speak** button — not the tool calls. Both views stay one tap apart:
+the header's **terminal icon** (a box with `>_`) opens the full live Claude Code pane, and the
+**book icon** there goes back to the short view. **Full history** lists every message and
+tool call. To land on the terminal every time, set **Settings → Agents → Default View →
+Terminal**. A per-pane choice does not carry over: each run is a new `task-NNN` pane.
+"Branch unverified" shows on every Claude pane and is harmless. "No user prompts or agent
+answers…" means the newest page of the run is all tool calls: tap **Load older turns**, or
+open the terminal.
 
 Permissions use `--permission-mode acceptEdits`: file edits — the bulk of a `/todo`
 run — flow without prompting, while Bash and destructive operations still ask. An

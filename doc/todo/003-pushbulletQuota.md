@@ -21,3 +21,5 @@ Decide and do one:
 Either way: a notify that fails should not be silent beyond the log — e.g. put the
 blocked reason on the affected task's card status line as well, so the board shows why a
 card in the agent list is not moving.
+
+_GitHub issue #3 — end the commit subject with `(#3)`._

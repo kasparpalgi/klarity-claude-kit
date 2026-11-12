@@ -345,7 +345,11 @@ says `npm ci in the new worktree`).
 not — is filed as a GitHub issue, renamed to the issue's number when that number is
 free, and put on the board's Backlog with the issue linked (`src/followup.js`). Only
 repos with a connected board take part. Every runner sees the same commits, so the card
-doubles as a lock: the first card in for a path wins and the others back off.
+doubles as a lock: the first card in for a path wins and the others back off. The
+winner moves its card to the new name only once the rename is on origin: a push that
+fails is retried after `pull --rebase`, and one that still fails is undone, leaving the
+file unrenamed and the card on the old path. A runner whose clone still has the old file
+fetches before it files, and backs off when origin already moved it (klarity-claude-kit#2).
 
 Logs are gitignored: the first run in a repo commits `*.log` to the task folder's
 `.gitignore`, so transcripts never dirty the tree or reach the remote.

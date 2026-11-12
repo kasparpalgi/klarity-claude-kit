@@ -2,12 +2,11 @@
  * File every follow-up task file as a GitHub issue first, then a Kanban Backlog card,
  * and number the file by its issue (svelte-hasura-boilerplate#53).
  *
- * This used to run only at the end of the runner's own run, on what that run committed,
- * and it made a card but never an issue. A follow-up committed any other way — a pane
- * still working after the runner gave up on it (043 → 046), a session at a desk — was
- * never filed at all. Now the reconcile sweep calls it for every new HEAD, whoever made
- * the commit. Every runner sweeps the same commits, so the card is the lock: the first
- * card in for a path wins, and a runner that loses removes its own and stops.
+ * The reconcile sweep calls it for every new HEAD, whoever made the commit. Every runner
+ * sweeps the same commits, so the card is the lock: the first card in for a path wins.
+ * The winner moves the card to the new name only once the rename is on origin — moved
+ * after a failed push, it freed the path, a second runner filed the file again, and the
+ * two renames left the first clone diverged for three days (klarity-claude-kit#2).
  */
 
 import { execFile } from "node:child_process";
@@ -72,6 +71,27 @@ async function ensureIssue(repoName, text, title) {
   return JSON.parse(stdout);
 }
 
+/** Gone from origin since we forked? The runner that won it renamed it there first. */
+async function movedOnOrigin(repoPath, f) {
+  await git(["fetch", "origin"], repoPath).catch(() => {});
+  const diff = "diff --no-renames --name-only --diff-filter=D HEAD...@{u} --";
+  const { stdout } = await git([...diff.split(" "), f], repoPath).catch(() => ({
+    stdout: "",
+  }));
+  return stdout.trim() !== "";
+}
+
+/** Push, replaying onto origin once if it moved; a commit that still will not go is undone. */
+async function push(repoPath) {
+  const ok = (cmd) => git(cmd.split(" "), repoPath).then(Boolean, () => false);
+  if (await ok("push origin HEAD")) return true;
+  if ((await ok("pull --rebase")) && (await ok("push origin HEAD")))
+    return true;
+  await ok("rebase --abort");
+  await git(["reset", "--keep", "HEAD~1"], repoPath);
+  return false;
+}
+
 async function fileOne(kanban, { repoName, repoPath, dir, board, backlog }, f) {
   const text = readFileSync(join(repoPath, f), "utf8");
   if ((await gql(kanban, CARDS_AT, { path: f })).todos.length) return null;
@@ -87,6 +107,10 @@ async function fileOne(kanban, { repoName, repoPath, dir, board, backlog }, f) {
     },
   });
   if ((await gql(kanban, CARDS_AT, { path: f })).todos[0]?.id !== card.id) {
+    await gql(kanban, DROP, { id: card.id });
+    return null;
+  }
+  if (await movedOnOrigin(repoPath, f)) {
     await gql(kanban, DROP, { id: card.id });
     return null;
   }
@@ -106,23 +130,21 @@ async function fileOne(kanban, { repoName, repoPath, dir, board, backlog }, f) {
     ["commit", "-m", `docs(todo): file follow-up ${name} as #${issue.number}`],
     repoPath,
   );
-  const pushed = await git(["push", "origin", "HEAD"], repoPath).then(
-    () => true,
-    () => false,
-  );
+  const pushed = await push(repoPath);
 
   await gql(kanban, FILED, {
     id: card.id,
     set: {
-      task_file_path: path,
-      content: body,
+      ...(pushed && { task_file_path: path, content: body }),
       github_issue_number: issue.number,
       github_issue_id: issue.id,
       github_url: issue.html_url,
       github_synced_at: new Date().toISOString(),
     },
   });
-  return `follow-up ${name} → issue #${issue.number}, ${kanban.lists.backlog}${pushed ? "" : " (push failed — committed locally)"}`;
+  return pushed
+    ? `follow-up ${name} → issue #${issue.number}, ${kanban.lists.backlog}`
+    : `follow-up ${basename(f)} → issue #${issue.number}, ${kanban.lists.backlog} (push failed — left unrenamed, the card keeps ${f})`;
 }
 
 /** File the follow-ups added between `since` and HEAD. Returns log lines. */

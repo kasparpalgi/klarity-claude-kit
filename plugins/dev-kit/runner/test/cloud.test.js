@@ -25,7 +25,7 @@ Object.assign(process.env, {
   PATH: `${join(root, "bin")}:${process.env.PATH}`,
   KANBAN_RUNNER_STATE: join(root, "state.json"),
   CLAUDE_CONFIG_FILE: join(root, ".claude.json"),
-  PUSHBULLET_ACCESS_TOKEN: "",
+  NTFY_TOPIC: "",
   FAKE_ROOT: root,
   GIT_AUTHOR_NAME: "t",
   GIT_AUTHOR_EMAIL: "t@t.t",

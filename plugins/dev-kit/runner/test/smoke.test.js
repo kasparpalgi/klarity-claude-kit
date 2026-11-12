@@ -36,7 +36,7 @@ test("run.js --once runs a -TODO task and lands it -DONE on origin", () => {
     KANBAN_RUNNER_STATE: join(root, "state.json"),
     KANBAN_RUNNER_WORKTREES: join(root, "worktrees"),
     CLAUDE_CONFIG_FILE: join(root, ".claude.json"),
-    PUSHBULLET_ACCESS_TOKEN: "",
+    NTFY_TOPIC: "",
     GIT_AUTHOR_NAME: "t",
     GIT_AUTHOR_EMAIL: "t@t.t",
     GIT_COMMITTER_NAME: "t",

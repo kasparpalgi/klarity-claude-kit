@@ -10,7 +10,7 @@ card enters the agent list on todzz
        └─ runner tick: clean the tree, return to base, pull
            └─ the task's own worktree, ~/.kanban-runner/worktrees/<repo>/<stem>
                └─ claude in a herdr pane  →  visible on the phone
-                   ├─ needs you  →  Pushbullet  →  answer in the relay PWA
+                   ├─ needs you  →  ntfy  →  answer in the relay PWA
                    └─ /todo renames to NNN-slug-DONE.md, commits, pushes
                        └─ runner lands it, removes the worktree, moves the card
 ```
@@ -147,7 +147,7 @@ while it works. A bare child process is invisible to both.
 
 Permissions use `--permission-mode acceptEdits`: file edits — the bulk of a `/todo`
 run — flow without prompting, while Bash and destructive operations still ask. An
-asking agent settles to `blocked`, which sends a Pushbullet **"Runner ⏸ needs you"**
+asking agent settles to `blocked`, which sends a phone note **"Runner ⏸ needs you"**
 with the pane text; answer it in the relay PWA and the run continues. Set
 `"unattended": true` to go back to `--dangerously-skip-permissions`.
 
@@ -196,7 +196,7 @@ Set `"remoteControl": true` and the pane starts as
 then also shows in **claude.ai/code** and the **Claude app** (Code tab), with diffs, a
 chat UI and image attachments, and you can type to it from there. The card's live status
 line ends with the session's `https://claude.ai/code/session_…` link, so one tap from the
-board opens it. herdr and Pushbullet keep working exactly as before. The app is a second
+board opens it. herdr and ntfy keep working exactly as before. The app is a second
 window, not a replacement, and the runner still decides everything from the pane.
 
 - **Per machine, off by default.** A session lands in the account that machine's `claude`
@@ -650,8 +650,12 @@ with its zone (`08/11/2026, 00:11 EET`).
 
 ## Phone notifications
 
-Pushbullet, via `PUSHBULLET_ACCESS_TOKEN`. No token means every notification is a
-silent no-op and nothing else changes.
+[ntfy.sh](https://ntfy.sh), free. Set `NTFY_TOPIC` in the runner's environment to a
+hard-to-guess topic and subscribe to it in the ntfy phone app. Optional: `NTFY_SERVER`
+(self-hosted, default `https://ntfy.sh`) and `NTFY_TOKEN` (bearer token for a protected
+topic). No topic means every notification is a silent no-op. A failed push is logged as
+`notify failed: …` in the runner log. (Pushbullet was dropped: its API now answers
+`pushbullet_pro_required`.)
 
 | Title | Meaning |
 | ----- | ------- |
@@ -698,7 +702,7 @@ silent no-op and nothing else changes.
 | `src/sweep.js`   | worktrees and branches a run left behind, put away once their task is over |
 | `src/pr.js`      | pull-request repos: what is in flight, finishing merged tasks, the review / stuck-merge sweep, `> After:` |
 | `src/rework.js`  | pull-request repos: a person's review comes back as a `reworkPr<N>` task |
-| `src/notify.js`  | Pushbullet |
+| `src/notify.js`  | ntfy.sh |
 
 ## Notes
 

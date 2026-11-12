@@ -280,7 +280,8 @@ comment (by id) as the run goes: `⏳ Waiting` at the usage wall, `⏸ Needs you
 pane blocks, `✘ Failed` / `⚠ Did not finish`, and finally
 `■ Finished on dell 14:02–14:41 · … · $2.33` with the cost from `sessionUsage.js`. A
 retry takes over the comment its unfinished attempt left; a `■ Finished` one is kept, so
-a card sent back for rework gets a fresh line. The Results comment stays separate. The
+a card sent back for rework gets a fresh line. A task queued behind a blocked repo gets
+`⏳ Waiting on dell since 14:02 · repo blocked: <reason>` the same way (once per task, #5). The Results comment stays separate. The
 Kanban's `cardThread.ts` drops these prefixes (`STATUS` in `src/status.js`) when it
 carries the thread into a re-queued task file — change both together. Its push webhook
 also leaves a card that carries one to the runner, so a finished card gets one close: no

@@ -38,14 +38,14 @@ export function statusLine(
   kind,
   { machine, startMs, endMs, tier, attempt, costUsd, note, url },
 ) {
-  const open = kind === "running" || kind === "needs";
+  const open = ["running", "waiting", "needs"].includes(kind);
   const span = open
     ? `since ${hhmm(startMs)}`
     : `${hhmm(startMs)}–${hhmm(endMs)}`;
   return [
     `${KINDS[kind]} on ${machine} ${span}`,
     tier,
-    `attempt ${attempt}`,
+    attempt ? `attempt ${attempt}` : null,
     costUsd != null ? `$${costUsd.toFixed(2)}` : null,
     note,
     url,
@@ -79,7 +79,18 @@ const EDIT = `mutation E($id: uuid!, $body: String!) {
  */
 export async function openStatus(
   kanban,
-  { repoName, todoId, machine, tier, attempt, startMs, url, log },
+  {
+    repoName,
+    todoId,
+    machine,
+    tier,
+    attempt,
+    startMs,
+    url,
+    log,
+    first = "running",
+    note,
+  },
 ) {
   // A cloud run (#86) is reopened ticks later: it passes its own start and link.
   const run = {
@@ -123,6 +134,6 @@ export async function openStatus(
     run.url = url;
     return say(...last);
   };
-  await say("running");
+  await say(first, { note });
   return say;
 }

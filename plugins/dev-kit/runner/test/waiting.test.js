@@ -43,10 +43,10 @@ function setup() {
 test("a blocked clone still names the new tasks origin queued for it", async () => {
   const path = setup();
   const mac = machineFilter({ machine: ["mac", "kaspar-mac"] });
-  assert.deepEqual(await waitingOnOrigin(path, "doc/todo", mac), [
-    "002-new-TODO.md",
-    "004-auto-TODO.md",
-  ]);
+  assert.deepEqual(
+    (await waitingOnOrigin(path, "doc/todo", mac)).map((t) => t.name),
+    ["002-new-TODO.md", "004-auto-TODO.md"],
+  );
 });
 
 test("an unreadable origin yields nothing rather than throwing", async () => {

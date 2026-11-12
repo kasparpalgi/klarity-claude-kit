@@ -11,6 +11,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { cardIdOf } from "./kanban.js";
 import { machineOf } from "./machine.js";
 import { numberOf, stemOf } from "./queue.js";
 import { baseBranch, git } from "./repo.js";
@@ -18,7 +19,7 @@ import { baseBranch, git } from "./repo.js";
 const out = async (args, cwd) => (await git(args, cwd)).stdout;
 
 /**
- * `-TODO.md` files on origin's base branch that this checkout does not have,
+ * `{ name, card }` for the `-TODO.md` files on origin's base branch that this checkout does not have,
  * addressed to this machine (`isMine` over the `> Machine:` slug). Empty when
  * origin cannot be read — the block reason already covers that.
  */
@@ -44,7 +45,7 @@ export async function waitingOnOrigin(repoPath, dir, isMine) {
     const ours = [];
     for (const name of fresh) {
       const text = await out(["show", `${ref}:${dir}/${name}`], repoPath);
-      if (isMine(machineOf(text))) ours.push(name);
+      if (isMine(machineOf(text))) ours.push({ name, card: cardIdOf(text) });
     }
     return ours;
   } catch {

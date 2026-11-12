@@ -264,9 +264,18 @@ const pinged = new Set();
 async function announceWaiting(repoName, repoPath, dir, kind, reason) {
   if (kind === "fetch" || kind === "missing") return;
   const tasks = await waitingOnOrigin(repoPath, dir, machineFilter(cfg));
-  for (const name of tasks) {
+  for (const { name, card } of tasks) {
     if (pinged.has(`${repoName}#${name}`)) continue;
     pinged.add(`${repoName}#${name}`);
+    // The card says why it sits there, not only the one ping hours ago (#5).
+    await openStatus(cfg.kanban, {
+      repoName,
+      todoId: card,
+      machine: myName(cfg),
+      first: "waiting",
+      note: `repo blocked: ${reason.split("\n")[0]}`,
+      log,
+    });
     log(`  ${repoName}: ${name} is waiting behind the block`);
     await notify(
       "Runner ⛔ task waiting",

@@ -145,6 +145,11 @@ Because the agent lives in a herdr pane it is inventoried by the herdr server, s
 shows up in `herdr agent list` and on the phone at `https://herdr.servicehost.io`
 while it works. A bare child process is invisible to both.
 
+**The phone opens a pane in Conversation view** (relay 0.23.0+): only the prompt and the
+latest answer, with a **Speak** button — not the tool calls. For the live pane set the app's
+**Settings → Agents → Default View → Terminal**, or tap **Full history** once (remembered on
+the device). A per-pane choice does not carry over: each run is a new `task-NNN` pane.
+
 Permissions use `--permission-mode acceptEdits`: file edits — the bulk of a `/todo`
 run — flow without prompting, while Bash and destructive operations still ask. An
 asking agent settles to `blocked`, which sends a phone note **"Runner ⏸ needs you"**

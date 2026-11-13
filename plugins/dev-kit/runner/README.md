@@ -155,6 +155,20 @@ Terminal**. A per-pane choice does not carry over: each run is a new `task-NNN` 
 answers…" means the newest page of the run is all tool calls: tap **Load older turns**, or
 open the terminal.
 
+**Flicker in the phone browser** comes from the relay app redialing, not from the runner
+(#11). The relay logs on karel and dell show the phone dropping both at the same second and
+redialing every 1–3 s for up to a minute. Chrome on Android tells the app when the network
+changes. The app then pings every relay and redials any that is silent for 2 s. Each redial
+reloads the open view. With **Settings → Terminal → Resize Session** on (the default again
+since 0.23.0), it also resizes the pane twice, and Claude repaints each time. Turn Resize
+Session off, or read in Conversation view, which never resizes.
+
+**Native Android apps.** The official [Herdr app](https://play.google.com/store/apps/details?id=dev.herdr.app)
+works only with herdr-core, so it does not see runner panes in the Herdr TUI server.
+[herdr-android](https://github.com/makefunstuff/herdr-android/releases/latest) is a
+third-party APK. It connects to the TUI server over SSH and opens an agent in its chat. Its
+terminal is sized to the phone too.
+
 Permissions use `--permission-mode acceptEdits`: file edits — the bulk of a `/todo`
 run — flow without prompting, while Bash and destructive operations still ask. An
 asking agent settles to `blocked`, which sends a phone note **"Runner ⏸ needs you"**

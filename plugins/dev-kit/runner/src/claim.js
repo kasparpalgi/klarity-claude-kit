@@ -73,23 +73,12 @@ export function withMachine(text, me) {
   return `${line}\n\n${text.replace(/^\s+/, "")}`;
 }
 
-/** Claim by pushing a `> Machine:` line; a push is atomic, so one runner lands it. */
-async function pushClaim(repoPath, dir, task, me) {
-  const rel = join(dir, task.name);
-  writeFileSync(task.path, withMachine(readFileSync(task.path, "utf8"), me));
+/** Commit only `rels` and push them, undone when refused. True once on origin. */
+export async function pushFiles(repoPath, rels, message) {
   try {
-    await git(
-      [
-        "commit",
-        "-m",
-        `chore(todo): claim ${task.number} for ${me}`,
-        "--",
-        rel,
-      ],
-      repoPath,
-    );
+    await git(["commit", "-m", message, "--", ...rels], repoPath);
   } catch {
-    await git(["checkout", "--", rel], repoPath);
+    await git(["checkout", "--", ...rels], repoPath);
     return false;
   }
   try {
@@ -101,8 +90,26 @@ async function pushClaim(repoPath, dir, task, me) {
   }
 }
 
+/** Claim by pushing a `> Machine:` line; a push is atomic, so one runner lands it. */
+async function pushClaim(repoPath, dir, task, me) {
+  writeFileSync(task.path, withMachine(readFileSync(task.path, "utf8"), me));
+  return pushFiles(
+    repoPath,
+    [join(dir, task.name)],
+    `chore(todo): claim ${task.number} for ${me}`,
+  );
+}
+
 const swap = async (kanban, id, me) =>
   (await gql(kanban, CLAIM, { id, m: me })).update_todos.affected_rows === 1;
+
+const RELEASE = `mutation R($id: uuid!, $m: String!) {
+  update_todos(where: {id: {_eq: $id}, agent_machine: {_ilike: $m}}, _set: {agent_machine: null}) { affected_rows }
+}`;
+
+/** The card back on Auto, if `me` holds it: true when it did (handover.js). */
+export const release = async (kanban, id, me) =>
+  (await gql(kanban, RELEASE, { id, m: me })).update_todos.affected_rows === 1;
 
 /** true or false as the board decides; null when there is no card to lock with. */
 async function cardClaim(kanban, { repoName, dir, task, me }) {

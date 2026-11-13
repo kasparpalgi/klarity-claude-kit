@@ -47,6 +47,7 @@ import { cloudTick } from "./cloudTick.js";
 import { waitingOnOrigin } from "./waiting.js";
 import { feedback, sweepRework } from "./rework.js";
 import { claim } from "./claim.js";
+import { handOver } from "./handover.js";
 import { issueOf } from "./issue.js";
 import { cardIdOf, closeLoop, reconcileCards, titleOf } from "./kanban.js";
 import { carryScreenshots } from "./screenshots.js";
@@ -238,8 +239,12 @@ async function reconcile(repoName, repoPath, dir) {
   for (const line of lines) log(`  ${repoName} ↺ ${line}`);
 }
 
-/** `repo#stem` → task-file mtime, for tasks whose card another runner holds. */
+/**
+ * `repo#stem` → the task-file mtime and when another runner held its card. Asked
+ * again after ten minutes: a runner at its usage wall gives its claims back (#12).
+ */
 const theirs = new Map();
+const THEIRS_MS = 10 * 60000;
 
 /**
  * `repo#stem` → a session left running in its pane (#60). Its transcript stops
@@ -356,7 +361,9 @@ async function runRepo(repoName, repoPath) {
     if ((await head()) !== was || lostFinish(lines)) return false;
   }
   // Cloud tasks never run here; the one runner with `cloud` sends them off (#86).
-  if (cfg.cloud) {
+  // They bill this account too, so not while it is at its usage wall.
+  const walled = state.cooldownUntil();
+  if (cfg.cloud && !walled) {
     const lines = await cloudTick({
       cfg,
       repoName,
@@ -394,13 +401,33 @@ async function runRepo(repoName, repoPath) {
     }
   }
 
+  const me = myName(cfg);
+  if (walled) {
+    if (!cfg.handOver || !me) return false;
+    // Nothing runs here until the reset: this machine's tasks go to a free one (#12).
+    const line = await handOver({
+      kanban: cfg.kanban,
+      repoPath,
+      dir,
+      pending,
+      isMine: machineFilter(cfg),
+      me,
+      until: stamp(walled),
+      live: (pane) => (cfg.useHerdr ? paneLive(pane) : false),
+    }).catch((err) => log(`  ${repoName} hand-over: ${err.message}`));
+    if (line) {
+      log(`  ${repoName} ↪ ${line}`);
+      await notify("Runner ↪ handed over", `${repoName}\n\n${line}`);
+    }
+    return false;
+  }
   // Another machine's tasks stay in the list (they are still pending, and their
   // attempt counts are still ours to prune) but are never picked here — nor is one
   // whose card another runner holds, nor one waiting on its `> After:` PR.
-  const me = myName(cfg);
   const ready = [];
   for (const t of mine(pending, machineFilter(cfg))) {
-    if (theirs.get(`${repoName}#${t.stem}`) === t.mtime) continue;
+    const held = theirs.get(`${repoName}#${t.stem}`);
+    if (held?.mtime === t.mtime && Date.now() - held.at < THEIRS_MS) continue;
     if (t.after.length && (await waiting(repoName, t).catch(() => t.after[0])))
       continue;
     ready.push(t);
@@ -428,7 +455,10 @@ async function runRepo(repoName, repoPath) {
     });
     if (won === null) return false;
     if (!won) {
-      theirs.set(`${repoName}#${task.stem}`, task.mtime);
+      theirs.set(`${repoName}#${task.stem}`, {
+        mtime: task.mtime,
+        at: Date.now(),
+      });
       log(`skip ${repoName} — ${task.name} claimed by another machine`);
       return false;
     }
@@ -1043,7 +1073,8 @@ async function tick() {
   const cooldown = state.cooldownUntil();
   if (cooldown) {
     log(`⏳ waiting out usage limit until ${stamp(cooldown)}`);
-    return;
+    // With `handOver` each repo still gets its tick, but only to give tasks away.
+    if (!cfg.handOver || !cfg.machine) return;
   }
   const entries = Object.entries(cfg.repos);
   const last = state.getLastRepo();
@@ -1067,7 +1098,10 @@ async function check() {
   if (cfg.cloud) log("cloud: sends `> Machine: cloud` tasks to cloud sessions");
   const isMine = machineFilter(cfg);
   const cooldown = state.cooldownUntil();
-  if (cooldown) log(`⏳ usage limit — waiting until ${stamp(cooldown)}`);
+  if (cooldown)
+    log(
+      `⏳ usage limit — waiting until ${stamp(cooldown)}${cfg.handOver ? ", handing this machine's tasks over" : ""}`,
+    );
   const { blocked } = state.snapshot();
   if (cfg.onboardMinutes && cfg.kanban.adminSecret) {
     try {

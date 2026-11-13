@@ -408,6 +408,7 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 | `unattended`     | on the herdr path, skip permissions instead of asking (true here) |
 | `remoteControl`  | on the herdr path, also open the session in claude.ai/code and the Claude app (default false). See *Remote Control* below |
 | `cloud`          | send `> Machine: cloud` tasks to Claude Code cloud sessions (default false). One runner only, on the account the sessions should bill. See *Cloud* below |
+| `handOver`       | at the usage wall, put this machine's waiting tasks back on Auto for a free runner (default false). See *Usage limits* |
 | `taskMinutes`    | cap on one `/todo` run (default 240) — only a still-`working` agent ever reaches it, so it guards against a hung agent, not a long task. At 45, Opus/high tasks with an E2E run were parked mid-work and re-run (tekdok 034, kanban 206) |
 | `blockedMinutes` | how long to wait for a human to answer a prompt (default 30)    |
 | `machine`        | this computer's id — a string or a list of spellings it answers to. Unset means it is the only runner and takes every task |
@@ -467,6 +468,9 @@ Each runner sets its own id in `config.json` and takes only the tasks addressed 
 A note in brackets after the id is ignored — `> Machine: mac (the only one that can ssh
 renlog)` is `mac`. Anything else that is no runner's id (`> Machine: one with ezy-iot
 checked out`) waits forever; `--check` shows it as `[→ one-with-…, not this machine]`.
+
+A machine at its usage wall gives its bare-addressed tasks away until the reset (see
+*Usage limits*).
 
 A file with **no** `> Machine:` line is unaddressed — "Auto" on the card. Any runner
 may take it, but claims it first, in the Kanban: it sets the
@@ -646,6 +650,24 @@ started with almost no budget left doesn't count toward the 3-strikes skip. The 
 and the `Runner ⏳ usage limit` notification show that moment in the machine's local time,
 with its zone (`08/11/2026, 00:11 EET`).
 
+**The wall is one machine's, so its queue moves on** (klarity-claude-kit#12). Each machine
+bills its own account: while the Mac waits out its reset, dell and karel are free. With
+`"handOver": true`, every tick of the wait still preflights each repo, but only to give this
+machine's waiting tasks back to Auto (`src/handover.js`): the card's machine is cleared, and a
+bare `> Machine: mac` line goes from the file in one pushed
+`chore(todo): hand 231, 234 to any runner — mac is at its usage limit until …` commit. The
+first free runner claims each one as usual, and the phone gets `Runner ↪ handed over`. It keeps:
+
+- a line with a reason in brackets, `> Machine: mac (the only one that can ssh renlog)`;
+- a task whose pane still works, or whose worktree holds commits that are on no remote. That
+  work resumes here after the reset. Other uncommitted work is parked in a stash first, as at
+  any other ending;
+- an Auto task it never started.
+
+A runner that lost a claim asks the card again after ten minutes, so an Auto task it gave back
+moves too. Leave `handOver` off where the board pins someone's cards to that one machine
+(`windows`). Those cards wait for it.
+
 ## CLI flags
 
 | Flag            | Effect                                              |
@@ -681,6 +703,7 @@ topic). No topic means every notification is a silent no-op. A failed push is lo
 | `Runner ↗ task on a branch` | work was left on a task branch, pushed, waiting for your merge |
 | `Runner ⇄ PR` / `Runner ✘ → draft PR` | a pull-request repo's session ended on its PR — opened by the agent, or as a draft by the runner (after a failure, with what the session left) |
 | `Runner ✘ branch did not ship` / `Runner ✘ did not land` / `Runner ✘ no worktree` | a task branch would not push, a push-to-main run's commits would not rebase or push onto the base branch, or its worktree would not open; the work stays in the worktree |
+| `Runner ↪ handed over` | this machine is at its usage wall, so the listed tasks went back to Auto for another runner |
 | `Runner ⚠ did not finish` | the agent stopped without renaming the file or committing |
 | `Runner ⏭ stuck task` | two runs, no `-DONE` rename; the task is skipped and an `unstick` fixer task is filed |
 | `Runner ＋ new repo` | a newly connected board was cloned, scaffolded and is now watched |
@@ -713,6 +736,7 @@ topic). No topic means every notification is a silent no-op. A failed push is lo
 | `src/followup.js`| new follow-up file → GitHub issue → Backlog card, file renamed to the issue number |
 | `src/screenshots.js` | a UI task's screenshots → attachments on its card |
 | `src/claim.js`   | claim an Auto (unaddressed) task on its Kanban card before running it |
+| `src/handover.js`| at the usage wall, this machine's waiting tasks back to Auto for a free runner |
 | `src/worktree.js`| a task's own branch and worktree, removing it again; for pull-request repos, shipping it as a PR |
 | `src/land.js`    | push-to-main repos: land a run's commits on the base branch from its worktree, catch the clone up |
 | `src/sweep.js`   | worktrees and branches a run left behind, put away once their task is over |

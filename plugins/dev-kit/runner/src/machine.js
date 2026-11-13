@@ -31,6 +31,16 @@ export const slug = (s) =>
 export const machineOf = (text) =>
   slug(LINE.exec(text ?? "")?.[1]?.replace(/\s*\(.*$/, "")) || null;
 
+/**
+ * A note in brackets says why the task needs that machine (`mac (the only one that
+ * can ssh renlog)`), so a runner at its usage wall keeps it (handover.js).
+ */
+export const reasoned = (text) => /\(/.test(LINE.exec(text ?? "")?.[1] ?? "");
+
+/** The file with no `> Machine:` line: Auto again, any runner may claim it. */
+export const withoutMachine = (text) =>
+  text.replace(new RegExp(`${LINE.source}\\n?`, LINE.flags), "");
+
 /** The id this runner writes into a claim — the first spelling it answers to. */
 export const myName = ({ machine }) =>
   [machine ?? []].flat().map(slug).find(Boolean) ?? null;

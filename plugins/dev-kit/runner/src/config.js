@@ -30,6 +30,9 @@ export function loadConfig(
     // Send `> Machine: cloud` tasks to Claude Code cloud sessions (#86). They run on
     // this machine's account, so set it on one runner only: two would both send them.
     cloud: file.cloud ?? false,
+    // At the usage wall, put this machine's tasks back on Auto for a free runner
+    // (handover.js). Off where the board pins someone's cards to this machine.
+    handOver: file.handOver ?? false,
     taskMinutes: file.taskMinutes ?? 240,
     // Who picks model + effort for a card left on Auto (classify.js). The call is
     // tiny, so the strongest non-Fable model is the default judge.

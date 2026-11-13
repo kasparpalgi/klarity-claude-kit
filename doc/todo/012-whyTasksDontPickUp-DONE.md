@@ -54,5 +54,21 @@ machine".
 - `claude plugin validate ./plugins/dev-kit` passes, and `run.js --check` runs on dell.
 - `handOver: true` is set in the runner config on dell, karel and the Mac.
 
+**Live check, 22:45–22:47.** The Mac took the update at 22:45:12. It handed over 011 at
+22:46:15, 032 at 22:46:20, and 230, 231, 234 and 241 at 22:46:44. Karel claimed 011 at 22:46:47
+and dell claimed 032 at 22:47:07. The kanban four go out as runners free up.
+
+**Other stuck tasks, decided in the same session ("make all decisions for me")**
+- boilerplate 038 and kanban 206 had been skipped on karel as stuck since September and
+  October, before fixers existed. I filed their fixers on karel, where the logs are:
+  boilerplate `096-unstick038` and kanban `249-unstick206`.
+- Fixer tasks now say `> Machine: karel (the stuck run's log is here)`, so a usage wall never
+  hands them away (runner 0.37.1).
+- boilerplate 93 (cloud smoke test) was not stuck: its PR #94 had waited since Nov 10. It
+  changed only the task file, so I merged it.
+- ezysmart-web 056 named no runner. Only the Mac has `../ezyrent-be` and ezy-iot, so it is now
+  `> Machine: mac (the only runner with …)`. It has no card to update.
+- tektok-app `> Machine: manual` tasks stay as they are: they are for a person by design.
+
 **Deviations.** A bare `> Machine: mac` now reads as a preference while the Mac is at its wall.
 A task that truly needs the Mac must say why in brackets, or it may run elsewhere during a wall.

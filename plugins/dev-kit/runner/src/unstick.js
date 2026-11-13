@@ -14,10 +14,14 @@ import { fileTask, nextNumber } from "./pr.js";
 
 const FIXER = /^\d+-unstick\d+-/;
 
-/** `> Run with:` and `> Machine:` for the fixer: the task's own tier, on this machine — the log is here. */
+/**
+ * `> Run with:` and `> Machine:` for the fixer: the task's own tier, on this machine.
+ * The bracketed reason keeps it here even at the usage wall (handover.js).
+ */
 function header(text, machine) {
   const tier = /^> Run with: .*$/m.exec(text)?.[0];
-  return [tier, machine && `> Machine: ${machine}`].filter(Boolean).join("\n");
+  const line = machine && `> Machine: ${machine} (the stuck run's log is here)`;
+  return [tier, line].filter(Boolean).join("\n");
 }
 
 const unstickTask = (

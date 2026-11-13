@@ -45,7 +45,7 @@ test("a stuck task gets one pushed fixer on this machine, at its own tier", asyn
   const args = { repoPath: repo, dir: DIR, task: stuck, machine: "dell" };
   assert.equal(await fileUnstick(args), "filed 232-unstick231-TODO.md");
   const body = readFileSync(join(repo, DIR, "232-unstick231-TODO.md"), "utf8");
-  assert.match(body, /^> Run with: Opus 5\.5 \/ medium\n> Machine: dell\n/);
+  assert.match(body, /^> Run with: Opus 5\.5 \/ medium\n> Machine: dell \(the stuck run's log is here\)\n/);
   assert.ok(body.includes(join(repo, DIR, "231-runnerApi.log")));
   assert.match(
     run(repo, "log", "--oneline", "origin/main", "-1"),

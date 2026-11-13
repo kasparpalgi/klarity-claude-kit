@@ -79,6 +79,7 @@ import { watchLink } from "./sessionLink.js";
 import { todoPrompt } from "./retry.js";
 import { costIn, openStatus } from "./status.js";
 import * as state from "./state.js";
+import { fileUnstick } from "./unstick.js";
 
 let cfg = loadConfig();
 const interactive = process.argv.includes("--interactive");
@@ -396,6 +397,7 @@ async function runRepo(repoName, repoPath) {
   // Another machine's tasks stay in the list (they are still pending, and their
   // attempt counts are still ours to prune) but are never picked here — nor is one
   // whose card another runner holds, nor one waiting on its `> After:` PR.
+  const me = myName(cfg);
   const ready = [];
   for (const t of mine(pending, machineFilter(cfg))) {
     if (theirs.get(`${repoName}#${t.stem}`) === t.mtime) continue;
@@ -403,13 +405,16 @@ async function runRepo(repoName, repoPath) {
       continue;
     ready.push(t);
   }
-  const task = await pick(repoName, ready);
+  const task = await pick(repoName, ready, async (t) => {
+    const line = await fileUnstick({ repoPath, dir, task: t, machine: me });
+    if (line) log(`  ${repoName}: ${line}`);
+    return line;
+  });
   if (!task) return false;
   if (cfg.useHerdr && (await paneLive(`task-${task.number}`))) {
     log(`skip ${repoName} — ${task.name} is still running in its pane`);
     return false;
   }
-  const me = myName(cfg);
   if (!task.machine && me) {
     const won = await claim(cfg.kanban, {
       repoPath,

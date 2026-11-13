@@ -116,16 +116,22 @@ export function retired(repoPath, dir, stem) {
   }
 }
 
-/** Two attempts on the same unchanged file is enough: announce once, move on. */
-export async function pick(repoName, pending) {
+/**
+ * Two attempts on the same unchanged file is enough: announce once, move on.
+ * `onStuck(task)` files a fixer for it (unstick.js) and returns its log line.
+ */
+export async function pick(repoName, pending, onStuck = async () => null) {
   for (const task of pending) {
     const n = state.tries(repoName, task.stem, task.mtime);
     if (n < 2) return task;
     if (n > 2) continue; // already announced, or handed off to a branch
     state.addTry(repoName, task.stem, task.mtime);
+    const fixer = await onStuck(task).catch(
+      (err) => `no fixer: ${err.message}`,
+    );
     await notify(
       "Runner ⏭ stuck task",
-      `${repoName} ${task.name}\n\nRan twice without renaming to -DONE (or -BLOCKED, if a human has to finish it). Skipped so the queue advances — edit the file to retry.`,
+      `${repoName} ${task.name}\n\nRan twice without renaming to -DONE (or -BLOCKED, if a human has to finish it). Skipped so the queue advances — edit the file to retry.${fixer ? `\n\n${fixer}` : ""}`,
     );
   }
   return null;

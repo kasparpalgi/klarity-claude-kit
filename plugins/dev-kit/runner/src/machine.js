@@ -23,8 +23,13 @@ export const slug = (s) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 
-/** The machine a task file names, slugged — null when it names none. */
-export const machineOf = (text) => slug(LINE.exec(text ?? "")?.[1]) || null;
+/**
+ * The machine a task file names, slugged — null when it names none. A note in
+ * brackets is dropped: `mac (the only one that can ssh renlog)` slugged whole
+ * matched no runner, so the task waited forever (klarity-claude-kit#10).
+ */
+export const machineOf = (text) =>
+  slug(LINE.exec(text ?? "")?.[1]?.replace(/\s*\(.*$/, "")) || null;
 
 /** The id this runner writes into a claim — the first spelling it answers to. */
 export const myName = ({ machine }) =>

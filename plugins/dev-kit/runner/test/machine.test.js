@@ -6,6 +6,7 @@ test("machineOf reads the line the Kanban writes", () => {
   assert.equal(machineOf("> Machine: karel\n\n# Task"), "karel");
   assert.equal(machineOf("> Run with: Opus 5 / high\n> Machine: Kaspar Mac\n"), "kaspar-mac");
   assert.equal(machineOf("Machine: karel"), "karel");
+  assert.equal(machineOf("> Machine: mac (+ Pi deploy of `x`)\n"), "mac");
 });
 
 test("machineOf is null when the file names none", () => {

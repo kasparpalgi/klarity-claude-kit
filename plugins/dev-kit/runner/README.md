@@ -120,7 +120,7 @@ self-healed or announced exactly once, on the edge.
 | A session that switched branch, rebased halfway or broke its tree | Only its worktree is affected: no agent ever runs in the clone (see *Every task in its own worktree*). Commits on a branch of the session's own making are pushed there with **↗ task on a branch**, never landed on the base branch |
 | Its commits will not land (rebase conflict, push refused) | **✘ did not land**: the worktree stays with the work in it, and the next attempt continues there. The clone and every other task move on |
 | A worktree left behind (its pane still worked, a usage-limit retry, a runner restart) | Each tick sweeps the repo's worktrees: one whose task is finished in it or no longer queued, with no live pane, is landed (push-to-main) or removed when nothing on it is lost (pull request repo). Its local branch goes once it is all on origin, and so does its trust entry in `~/.claude.json` |
-| A task that runs but keeps leaving the tree dirty | Two attempts, then **⏭ stuck task** once and that number is skipped so the queue advances. Editing the task file resets the count |
+| A task that runs but keeps leaving the tree dirty | Two attempts, then **⏭ stuck task** once and that number is skipped so the queue advances. Editing the task file resets the count. The skip also files and pushes `NNN-unstick<N>-TODO.md` (`src/unstick.js`), addressed to this machine (the stuck run's `.log` is here) at the task's own `> Run with:`: it reads the transcript and the stash, then finishes the task or renames it `-BLOCKED`. One fixer per task number, and a stuck fixer gets none, so it can never loop |
 | The second attempt at a task | Runs `/todo NNN <note>`: the note says how attempt 1 ended (the reason, the stash commit holding its work, its `NNN-slug.log`), so it resumes instead of starting cold. The note lives in state.json, never in the task file, because editing the file resets the count. Attempt 1 is always the bare `/todo NNN` |
 | A card dragged out of the agent list mid-run | The tick loop is parked inside the run, so the run watches its own card: every `pollSeconds` it fetches origin's base branch into a private ref (never a pull, never `origin/*`, so it cannot race the agent's own `git pull`). Once the task was seen there and then has no `-TODO`/`-DONE`/`-BLOCKED` file left — renamed back to a draft or deleted — it closes the pane and kills its own `herdr` wait (a pending `agent wait` ignores its tab closing until it times out). Commits the agent made but never pushed are soft-reset (push-to-main repos), then the worktree's dirt is stashed, the worktree closed, and **⏹ stopped — card left the agent list** names the stash. The attempt is given back; moving the card back writes a fresh `-TODO` that queues normally. In a pull-request repo the branch keeps any commits for the next run |
 
@@ -464,6 +464,10 @@ Each runner sets its own id in `config.json` and takes only the tasks addressed 
 { "machine": "mac" }                         // this Mac
 ```
 
+A note in brackets after the id is ignored — `> Machine: mac (the only one that can ssh
+renlog)` is `mac`. Anything else that is no runner's id (`> Machine: one with ezy-iot
+checked out`) waits forever; `--check` shows it as `[→ one-with-…, not this machine]`.
+
 A file with **no** `> Machine:` line is unaddressed — "Auto" on the card. Any runner
 may take it, but claims it first, in the Kanban: it sets the
 card's machine compare-and-swap (the update matches only while the field is empty or
@@ -678,7 +682,7 @@ topic). No topic means every notification is a silent no-op. A failed push is lo
 | `Runner ⇄ PR` / `Runner ✘ → draft PR` | a pull-request repo's session ended on its PR — opened by the agent, or as a draft by the runner (after a failure, with what the session left) |
 | `Runner ✘ branch did not ship` / `Runner ✘ did not land` / `Runner ✘ no worktree` | a task branch would not push, a push-to-main run's commits would not rebase or push onto the base branch, or its worktree would not open; the work stays in the worktree |
 | `Runner ⚠ did not finish` | the agent stopped without renaming the file or committing |
-| `Runner ⏭ stuck task` | two runs, no `-DONE` rename; the task is skipped |
+| `Runner ⏭ stuck task` | two runs, no `-DONE` rename; the task is skipped and an `unstick` fixer task is filed |
 | `Runner ＋ new repo` | a newly connected board was cloned, scaffolded and is now watched |
 | `Runner － repo removed` | the repo's board was archived or deleted: no longer watched, clone deleted (or kept, with the reason) |
 | `Runner ⚠ cannot onboard` | a connected board's repo would not clone or scaffold — said once, not every sweep |
@@ -690,6 +694,7 @@ topic). No topic means every notification is a silent no-op. A failed push is lo
 | `src/run.js`     | tick loop, one task per tick, `--check` |
 | `src/repo.js`    | git preflight: dirt classification, branch, fetch/pull |
 | `src/queue.js`   | task folder → pending list, attempt-limited pick |
+| `src/unstick.js` | the fixer task filed for a task that ran twice without finishing |
 | `src/state.js`   | `~/.kanban-runner/state.json`: blocked reasons, attempt counts, how the last attempt ended |
 | `src/retry.js`   | the `/todo` prompt: bare on attempt 1, plus the last ending on a retry |
 | `src/herdr.js`   | run Claude in a herdr pane, wait out blocks |

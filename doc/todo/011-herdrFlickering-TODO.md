@@ -9,6 +9,6 @@
 
 sometimes on browser, also send me links to try on herdr native app to connect on y android - currently browser
 
-see also why todo tasks from the kanban board doesn
+see also why todo tasks from the kanban board doesnot pick up
 
 _From Kanban card `ccefe8f0-4729-415c-9e5a-7f24feec3a0a`._

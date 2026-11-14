@@ -42,7 +42,14 @@ import {
   stemOf,
   todoDir,
 } from "./queue.js";
-import { CLOUD, machineFilter, machineOf, mine, myName } from "./machine.js";
+import {
+  CLOUD,
+  machineFilter,
+  machineOf,
+  mine,
+  myName,
+  nobodys,
+} from "./machine.js";
 import { cloudTick } from "./cloudTick.js";
 import { waitingOnOrigin } from "./waiting.js";
 import { feedback, sweepRework } from "./rework.js";
@@ -400,6 +407,18 @@ async function runRepo(repoName, repoPath) {
       );
     }
   }
+
+  // Once per file version (the try count, as for a hand-off above): an edit re-arms it.
+  const nobody = pending.filter(
+    (t) =>
+      nobodys(cfg, t.machine) && state.tries(repoName, t.stem, t.mtime) < 3,
+  );
+  for (const t of nobody) state.addTry(repoName, t.stem, t.mtime, 3);
+  if (nobody.length)
+    await notify(
+      "Runner ⏸ addressed to nobody",
+      `${repoName}\n${nobody.map((t) => `${t.name} → ${t.machine}`).join("\n")}\n\nNo runner answers to that (${cfg.machines.join(", ")}), so no agent will run it. A person's task: do it and rename it -DONE, or move its card to Backlog. Otherwise name a machine, or drop the line for Auto.`,
+    );
 
   const me = myName(cfg);
   if (walled) {
@@ -1155,7 +1174,9 @@ async function check() {
         ? ""
         : p.machine === CLOUD && cfg.cloud
           ? `  [☁ ${cloud}]`
-          : `  [→ ${p.machine ?? "unaddressed"}, not this machine]`;
+          : nobodys(cfg, p.machine)
+            ? `  [→ ${p.machine}, NO runner answers to it]`
+            : `  [→ ${p.machine ?? "unaddressed"}, not this machine]`;
       const pr = viaPr && prOf(p, open, dir, state.handedTo(name, p.stem));
       const flight = pr ? `  [in PR #${pr.number}]` : "";
       const after = p.after.length

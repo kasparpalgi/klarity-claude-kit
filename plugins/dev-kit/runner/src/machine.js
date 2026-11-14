@@ -60,6 +60,17 @@ export function machineFilter({ machine }) {
   return (want) => want !== CLOUD && (!me.size || !want || me.has(want));
 }
 
+/**
+ * True when `want` names no runner in `machines` (config) — not even this one. Such a
+ * task waits forever: `> Machine: manual` parked svelte-todo-kanban's 234 like that,
+ * its card still in TODO, and nothing said why (klarity-claude-kit#14). Without a
+ * `machines` list nobody is called unknown.
+ */
+export function nobodys({ machine, machines }, want) {
+  const known = [machine ?? [], machines ?? [], CLOUD].flat().map(slug);
+  return Boolean(want && machines?.length && !known.includes(want));
+}
+
 /** The subset of `pending` this machine owns. */
 export const mine = (pending, isMine) =>
   pending.filter((t) => isMine(t.machine));

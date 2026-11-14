@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   renameSync,
   writeFileSync,
 } from "node:fs";
@@ -20,7 +21,8 @@ const STEM = "091-always";
 
 /** A bare origin, the runner's clone of it, and a second clone standing in for the Kanban. */
 function setup() {
-  const root = mkdtempSync(join(tmpdir(), "land-"));
+  // realpath: macOS tmpdir is /var → /private/var, and `git worktree list` prints the latter.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "land-")));
   const run = (cwd, ...a) =>
     execFileSync("git", a, { cwd, encoding: "utf8" }).trim();
   run(root, "init", "-q", "--bare", "-b", "main", "origin.git");

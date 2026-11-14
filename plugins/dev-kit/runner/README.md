@@ -429,6 +429,7 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 | `codeRoot`       | where onboarding looks for clones and puts new ones (default `~/Documents/GitHub`) |
 | `onboardMinutes` | how often the daemon adopts newly connected boards (default 5; `0` turns it off) |
 | `seo`            | repos (`"owner/repo"`) that also get the claude-seo plugin — landing / marketing sites only. A board gets it too with `"seo": true` in its `github` JSON. For an already-onboarded repo, add it here and run `npm run onboard -- --all` |
+| `machines`       | every runner id on the board (`cloud` is implied). Listed, a task addressed to none of them is reported once instead of waiting silently. Set it on one runner |
 | `peers`          | host → this runner's folder on it; `npm run onboard` repeats itself there over ssh, and the sweep pushes secrets there. Omit on the peer |
 | `pullRequests`   | repos (`"owner/repo"`) where every change is a pull request — see below. Only a repo whose CI merges green PRs by itself belongs here, or its tasks never finish |
 
@@ -481,7 +482,12 @@ Each runner sets its own id in `config.json` and takes only the tasks addressed 
 
 A note in brackets after the id is ignored — `> Machine: mac (the only one that can ssh
 renlog)` is `mac`. Anything else that is no runner's id (`> Machine: one with ezy-iot
-checked out`) waits forever; `--check` shows it as `[→ one-with-…, not this machine]`.
+checked out`, `> Machine: manual`) waits forever. With every runner id listed in
+`machines`, the runner says so once per file version — one `Runner ⏸ addressed to nobody`
+per repo, naming each — and `--check` marks it `[→ manual, NO runner answers to it]`;
+without the list it is only `[→ manual, not this machine]`. A person's task belongs in the
+Backlog or a `-BLOCKED.md`, and one waiting on other work in `> After: #N` — not a queued
+`-TODO.md` with a made-up machine.
 
 A machine at its usage wall gives its bare-addressed tasks away until the reset (see
 *Usage limits*).

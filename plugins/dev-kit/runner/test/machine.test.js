@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { machineFilter, machineOf, mine, myName, slug } from "../src/machine.js";
+import { machineFilter, machineOf, mine, myName, nobodys, slug } from "../src/machine.js";
 
 test("machineOf reads the line the Kanban writes", () => {
   assert.equal(machineOf("> Machine: karel\n\n# Task"), "karel");
@@ -60,4 +60,12 @@ test("a machine may answer to more than one spelling", () => {
   assert.equal(isMine("karel"), true);
   assert.equal(isMine("karel-ubuntu"), true);
   assert.equal(isMine("mac"), false);
+});
+
+test("nobodys: a name no listed runner answers to", () => {
+  const cfg = { machine: ["mac", "kaspar-mac"], machines: ["karel", "dell", "windows"] };
+  assert.equal(nobodys(cfg, "manual"), true);
+  for (const want of ["mac", "kaspar-mac", "karel", "windows", "cloud", null])
+    assert.equal(nobodys(cfg, want), false, want);
+  assert.equal(nobodys({ machine: "mac" }, "manual"), false, "no list, no verdict");
 });

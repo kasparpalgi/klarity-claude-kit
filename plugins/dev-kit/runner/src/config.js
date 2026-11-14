@@ -41,6 +41,9 @@ export function loadConfig(
     // This computer's id. Unset means "the only machine" — take every task.
     // Set, and it takes tasks naming it plus unaddressed ones it claims (claim.js).
     machine: file.machine ?? null,
+    // Every runner id on the board. Listed, a task addressed to none of them is
+    // reported once instead of waiting silently (machine.js `nobodys`).
+    machines: file.machines ?? [],
     // How often the daemon adopts newly connected boards. 0 turns it off and
     // `npm run onboard` goes back to being the only way in.
     onboardMinutes: file.onboardMinutes ?? 5,

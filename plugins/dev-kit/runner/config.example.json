@@ -2,6 +2,7 @@
 	"pollSeconds": 60,
 	"checkpointQuietSeconds": 60,
 	"machine": "mac",
+	"machines": ["mac", "karel", "dell", "windows"],
 	"useHerdr": true,
 	"unattended": true,
 	"remoteControl": true,

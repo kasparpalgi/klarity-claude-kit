@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { KANBAN, fakeApi } from "./fakeApi.js";
 import { handOver } from "../src/handover.js";
 import { machineFilter, reasoned, withoutMachine } from "../src/machine.js";
 import { listPending } from "../src/queue.js";
@@ -69,24 +70,20 @@ function setup() {
     106: "mac",
   };
   const board = new Map(Object.entries(machines).map(([n, m]) => [card(n), m]));
-  globalThis.fetch = async (_url, { body }) => {
-    const { query, variables: v } = JSON.parse(body);
-    assert.match(query, /^mutation R/);
-    const held = board.get(v.id)?.toLowerCase() === v.m.toLowerCase();
-    if (held) board.set(v.id, null);
-    return {
-      json: async () => ({
-        data: { update_todos: { affected_rows: held ? 1 : 0 } },
-      }),
-    };
-  };
+  fakeApi({
+    releaseCard: ({ id, machine }) => {
+      const held = board.get(id)?.toLowerCase() === machine.toLowerCase();
+      if (held) board.set(id, null);
+      return { released: held };
+    },
+  });
   return { root, clone, board, git };
 }
 
 test("a walled runner gives its bare and started tasks to any runner, and keeps the rest", async () => {
   const { root, clone, board, git } = setup();
   const line = await handOver({
-    kanban: { endpoint: "x", adminSecret: "s" },
+    kanban: KANBAN,
     repoPath: clone,
     dir: DIR,
     pending: listPending(clone, DIR),
@@ -141,7 +138,7 @@ test("a walled runner gives its bare and started tasks to any runner, and keeps 
 test("a task whose pane still works is not handed over", async () => {
   const { clone, board } = setup();
   const line = await handOver({
-    kanban: { endpoint: "x", adminSecret: "s" },
+    kanban: KANBAN,
     repoPath: clone,
     dir: DIR,
     pending: listPending(clone, DIR),

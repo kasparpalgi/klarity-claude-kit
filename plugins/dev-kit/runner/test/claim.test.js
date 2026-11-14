@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { KANBAN, fakeApi } from "./fakeApi.js";
 import { claim, withMachine } from "../src/claim.js";
 
 const CARD = "aaaaaaaa-1111-2222-3333-444455556666";
@@ -29,50 +30,39 @@ function repo(body) {
 function fakeKanban(cards = [], late = { n: Infinity, cards: [] }) {
   let looks = 0;
   let seq = 0;
-  const kanban = {
-    endpoint: "x",
-    adminSecret: "s",
-    lists: { todo: "TODO" },
-    cards,
-  };
-  globalThis.fetch = async (_url, { body }) => {
-    const { query, variables: v } = JSON.parse(body);
-    await new Promise((r) => setImmediate(r));
-    let data;
-    if (query.includes("update_todos(")) {
-      const c = cards.find((c) => c.id === v.id);
-      const free = c && (!c.agent_machine || c.agent_machine === v.m);
-      if (free) c.agent_machine = v.m;
-      data = { update_todos: { affected_rows: free ? 1 : 0 } };
-    } else if (query.includes("boards("))
-      data = {
-        boards: [
-          { id: "b", user_id: "u", lists: [{ id: "l-todo", name: "TODO" }] },
-        ],
-      };
-    else if (query.includes("insert_todos_one")) {
-      const card = { ...v.o, id: `c${++seq}` };
+  const kanban = { ...KANBAN, lists: { todo: "TODO" }, cards };
+  fakeApi({
+    claimCard: ({ id, machine }) => {
+      const c = cards.find((c) => c.id === id);
+      const free = c && (!c.agent_machine || c.agent_machine === machine);
+      if (free) c.agent_machine = machine;
+      return { claimed: !!free };
+    },
+    board: () => ({
+      id: "b",
+      user_id: "u",
+      lists: [{ id: "l-todo", name: "TODO" }],
+    }),
+    createCard: (o) => {
+      const card = { ...o, id: `c${++seq}` };
       cards.push(card);
-      data = { insert_todos_one: { id: card.id } };
-    } else if (query.startsWith("query K")) {
-      const c = cards.find((c) => c.id === v.id);
-      data = { todos_by_pk: c ? { id: c.id } : null };
-    } else if (query.includes("delete_todos_by_pk")) {
+      return { id: card.id };
+    },
+    deleteCard: ({ id }) => {
       cards.splice(
-        cards.findIndex((c) => c.id === v.id),
+        cards.findIndex((c) => c.id === id),
         1,
       );
-      data = {};
-    } else {
+      return { deleted: true };
+    },
+    cards: ({ ids, paths }) => {
+      if (ids) return cards.filter((c) => ids.includes(c.id)).map(({ id }) => ({ id }));
       if (++looks === late.n) cards.unshift(...late.cards);
-      data = {
-        todos: cards
-          .filter((c) => c.task_file_path === v.path)
-          .map(({ id }) => ({ id })),
-      };
-    }
-    return { json: async () => ({ data }) };
-  };
+      return cards
+        .filter((c) => paths.includes(c.task_file_path))
+        .map(({ id }) => ({ id }));
+    },
+  });
   return kanban;
 }
 

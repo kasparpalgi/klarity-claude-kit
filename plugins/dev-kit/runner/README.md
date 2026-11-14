@@ -2,7 +2,8 @@
 
 A personal daemon that watches local git clones for new `doc/todo/NNN-*-TODO.md` files
 and runs `/todo NNN` against them via `claude`. No Hasura, no admin secret, no public
-endpoint.
+endpoint. It reaches the Kanban only through its runner API
+(`POST <appUrl>/api/runner/<op>`, bearer `apiToken` — `src/kanban.js` `runnerApi`).
 
 ```
 card enters the agent list on todzz
@@ -264,7 +265,7 @@ tail -f ~/Library/Logs/kanban-runner.log
 
 ### Claude pricing sync (launchd)
 
-Keeps `claude_model_pricing` in Hasura current from LiteLLM's price list, every ~3
+Keeps `claude_model_pricing` in the Kanban current from LiteLLM's price list, every ~3
 days:
 
 ```bash
@@ -278,7 +279,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/eu.todzz.claude-pricing.
 tail -f ~/Library/Logs/claude-pricing.log
 ```
 
-It reads `endpoint`/`adminSecret` from the same `config.json` as the task runner —
+It reads `apiToken` from the same `config.json` as the task runner —
 no separate credentials to manage.
 
 ### Per-session token usage
@@ -293,7 +294,7 @@ The log line reads `usage: claude-opus-5 2271895 in / 29536 out → $2.3296`.
 
 Two things it deliberately tolerates: a model with no price row yet (LiteLLM lags a
 brand-new id by days) costs 0 and is named in the log, and a run whose transcript
-cannot be found is a log line, not a failure. Needs `endpoint`/`adminSecret` in
+cannot be found is a log line, not a failure. Needs `apiToken` in
 `config.json`; without them the runner skips this entirely.
 
 ### Live status on the card
@@ -382,7 +383,7 @@ Logs are gitignored: the first run in a repo commits `*.log` to the task folder'
 **Screenshots ride to the card.** For a UI task `/verify` saves 1–3 screenshots as
 `<task dir>/NNN-slug-*.png`, gitignored the same way (`/[0-9]*-*.png`). When the card
 moves to Review, closeLoop posts them to the Kanban app's `/api/runner/upload`
-(`appUrl`, default `https://todzz.eu`, authenticated with `adminSecret`), which stores
+(`appUrl`, default `https://www.todzz.eu`, authenticated with `apiToken`), which stores
 them like any card upload — the owner's R2 bucket, else the app's — and lists them on
 the card. A task with no screenshots closes exactly as before.
 

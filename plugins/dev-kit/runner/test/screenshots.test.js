@@ -1,3 +1,4 @@
+import { KANBAN } from "./fakeApi.js";
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -48,7 +49,7 @@ test("no screenshots → no request at all", async () => {
     throw new Error("must not be called");
   });
   const out = await attachScreenshots(
-    { appUrl: "https://k.test", endpoint: "https://h.test" },
+    KANBAN,
     { full: dir(`${STEM}.log`), stem: STEM, id: "card" },
   );
   assert.deepEqual(out, []);
@@ -59,20 +60,21 @@ test("no screenshots → no request at all", async () => {
 test("uploads only what the card does not show yet", async () => {
   const calls = [];
   const fetch = mock.method(globalThis, "fetch", async (url, init) => {
-    calls.push(String(url));
-    const body = String(url).startsWith("https://h.test")
-      ? { data: { uploads: [{ url: `https://cdn/x/123-${STEM}-1.png` }] } }
+    calls.push([String(url), init.headers.authorization]);
+    const body = String(url).endsWith("/uploads")
+      ? { data: [{ url: `https://cdn/x/123-${STEM}-1.png` }] }
       : { success: true };
-    return { status: 200, json: async () => body };
+    return { ok: true, status: 200, json: async () => body };
   });
   const out = await attachScreenshots(
-    { appUrl: "https://k.test", endpoint: "https://h.test", adminSecret: "s" },
+    KANBAN,
     { full: dir(`${STEM}-1.png`, `${STEM}-2.png`), stem: STEM, id: "card" },
   );
   assert.deepEqual(out, ["1 screenshot(s) attached"]);
+  const bearer = `Bearer ${KANBAN.apiToken}`;
   assert.deepEqual(calls, [
-    "https://h.test",
-    "https://k.test/api/runner/upload",
+    ["https://k.test/api/runner/uploads", bearer],
+    ["https://k.test/api/runner/upload", bearer],
   ]);
   fetch.mock.restore();
 });

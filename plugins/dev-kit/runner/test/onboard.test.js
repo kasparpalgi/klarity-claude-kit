@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { KANBAN, fakeApi } from "./fakeApi.js";
 import { dirFor, findClone, missing, onboard, originOf, repoOf } from "../src/onboard.js";
 import { loadConfig } from "../src/config.js";
 import { readFileSync } from "node:fs";
@@ -128,15 +129,15 @@ test("findClone finds the repo wherever it was filed by hand", () => {
   assert.equal(findClone(root, "x/never-cloned"), null);
 });
 
-/** A config.json on disk plus a fetch that answers the BOARDS query with `boards`. */
+/** A config.json on disk plus a Kanban whose `boards` op answers with `boards`. */
 function fixture(boards, extra = {}) {
   const root = mkdtempSync(join(tmpdir(), "onboard-"));
   const path = join(root, "config.json");
   writeFileSync(
     path,
-    JSON.stringify({ endpoint: "http://x/v1/graphql", adminSecret: "s", repos: {}, codeRoot: root, ...extra }),
+    JSON.stringify({ ...KANBAN, repos: {}, codeRoot: root, ...extra }),
   );
-  globalThis.fetch = async () => ({ json: async () => ({ data: { boards } }) });
+  fakeApi({ boards: () => boards });
   return { root, path };
 }
 

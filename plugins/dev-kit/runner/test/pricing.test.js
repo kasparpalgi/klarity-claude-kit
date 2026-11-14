@@ -75,26 +75,24 @@ test("fetchClaudePricing throws on a non-OK response", async () => {
   await assert.rejects(fetchClaudePricing("x", fake), /HTTP 503/);
 });
 
-test("upsertPricing sends rows as an on_conflict upsert and returns the count", async () => {
+test("upsertPricing sends the rows to the runner API and returns the count", async () => {
   const rows = mapLitellmPricing(SAMPLE);
   let seen;
-  const gqlFn = async (kanban, query, variables) => {
-    seen = { kanban, query, variables };
-    return { insert_claude_model_pricing: { affected_rows: rows.length } };
+  const api = async (kanban, op, input) => {
+    seen = { kanban, op, input };
+    return { affected: input.rows.length };
   };
-  const kanban = { endpoint: "https://x", adminSecret: "s" };
-  const affected = await upsertPricing(kanban, rows, gqlFn);
+  const kanban = { apiToken: "t", appUrl: "https://x" };
+  const affected = await upsertPricing(kanban, rows, api);
   assert.equal(affected, 2);
   assert.equal(seen.kanban, kanban);
-  assert.match(seen.query, /on_conflict/);
-  assert.match(seen.query, /claude_model_pricing_pkey/);
-  assert.equal(seen.variables.rows.length, 2);
-  assert.ok(seen.variables.rows[0].updated_at);
+  assert.equal(seen.op, "upsertPricing");
+  assert.equal(seen.input.rows.length, 2);
 });
 
 test("upsertPricing skips the request for an empty row set", async () => {
-  const gqlFn = async () => {
+  const api = async () => {
     throw new Error("should not be called");
   };
-  assert.equal(await upsertPricing({}, [], gqlFn), 0);
+  assert.equal(await upsertPricing({}, [], api), 0);
 });

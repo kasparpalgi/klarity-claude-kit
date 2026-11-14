@@ -977,8 +977,7 @@ let nextSweepMs = 0;
 const announced = new Set();
 
 async function sweepBoards() {
-  if (!cfg.onboardMinutes || !cfg.kanban.endpoint || !cfg.kanban.adminSecret)
-    return;
+  if (!cfg.onboardMinutes || !cfg.kanban.apiToken) return;
   if (Date.now() < nextSweepMs) return;
   nextSweepMs = Date.now() + cfg.onboardMinutes * 60000;
   await retire();
@@ -1103,7 +1102,7 @@ async function check() {
       `⏳ usage limit — waiting until ${stamp(cooldown)}${cfg.handOver ? ", handing this machine's tasks over" : ""}`,
     );
   const { blocked } = state.snapshot();
-  if (cfg.onboardMinutes && cfg.kanban.adminSecret) {
+  if (cfg.onboardMinutes && cfg.kanban.apiToken) {
     try {
       const { boards, todo } = await onboard({
         dryRun: true,

@@ -11,6 +11,16 @@ const DEFAULT_PATH = join(
 const expand = (dir) =>
   resolve(dir.startsWith("~/") ? join(homedir(), dir.slice(2)) : dir);
 
+/**
+ * The Kanban's connection from a config file's fields. `appUrl` must be the canonical
+ * host: `todzz.eu` redirects to `www.`, and fetch drops `Authorization` when it follows
+ * a cross-origin redirect.
+ */
+export const kanbanOf = (file) => ({
+  apiToken: file.apiToken ?? null,
+  appUrl: file.appUrl ?? "https://www.todzz.eu",
+});
+
 export function loadConfig(
   path = process.env.KANBAN_RUNNER_CONFIG ?? DEFAULT_PATH,
 ) {
@@ -52,13 +62,10 @@ export function loadConfig(
     // the base branch (land.js). A repo with no
     // merge job must stay off this list, or its tasks would never finish.
     pullRequests: (file.pullRequests ?? []).map((r) => r.toLowerCase()),
-    // Closing the card is optional: without an endpoint + adminSecret the runner
-    // just does the files, exactly as before.
+    // Closing the card is optional: without an apiToken the runner just does the
+    // files, exactly as before. The token is the Kanban's RUNNER_API_TOKEN.
     kanban: {
-      endpoint: file.endpoint ?? null,
-      adminSecret: file.adminSecret ?? null,
-      // The Kanban app itself, which stores the screenshots closeLoop attaches (#69).
-      appUrl: file.appUrl ?? "https://todzz.eu",
+      ...kanbanOf(file),
       lists: {
         todo: "TODO",
         doing: "Doing",

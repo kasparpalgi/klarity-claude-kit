@@ -7,7 +7,7 @@
 
 import { copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { gql } from "./kanban.js";
+import { hasKanban, runnerApi } from "./kanban.js";
 
 const MAX = 3;
 
@@ -29,13 +29,11 @@ export function carryScreenshots(from, to, stem) {
     copyFileSync(join(from, n), join(to, n));
 }
 
-const ATTACHED = `query U($id: uuid!) { uploads(where: {todo_id: {_eq: $id}}) { url } }`;
-
 /** Upload the task's screenshots to card `id`; skips any already attached. */
 export async function attachScreenshots(kanban, { full, stem, id }) {
   const names = screenshotsOf(full, stem);
-  if (!names.length || !kanban.appUrl) return [];
-  const { uploads } = await gql(kanban, ATTACHED, { id });
+  if (!names.length || !hasKanban(kanban)) return [];
+  const uploads = await runnerApi(kanban, "uploads", { todoId: id });
   const fresh = names.filter((n) => !uploads.some((u) => u.url.endsWith(n)));
   for (const name of fresh) {
     const form = new FormData();
@@ -50,7 +48,7 @@ export async function attachScreenshots(kanban, { full, stem, id }) {
       // SvelteKit refuses a form POST whose Origin is not its own.
       headers: {
         origin: new URL(kanban.appUrl).origin,
-        "x-hasura-admin-secret": kanban.adminSecret,
+        authorization: `Bearer ${kanban.apiToken}`,
       },
       body: form,
       signal: AbortSignal.timeout(60000),

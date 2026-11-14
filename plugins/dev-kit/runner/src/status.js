@@ -11,7 +11,7 @@
  */
 
 import { hostname } from "node:os";
-import { BOARD, gql } from "./kanban.js";
+import { boardOf, hasKanban, runnerApi } from "./kanban.js";
 
 /** The prefixes the Kanban's `cardThread.ts` drops from a re-queued task file. */
 export const STATUS =
@@ -60,18 +60,6 @@ export const costIn = (line) => {
   return m ? Number(m[1]) : null;
 };
 
-const MINE = `query M($id: uuid!, $user: uuid!) {
-  comments(where: {todo_id: {_eq: $id}, user_id: {_eq: $user}}, order_by: {created_at: desc}) {
-    id content
-  }
-}`;
-const POST = `mutation P($id: uuid!, $user: uuid!, $body: String!) {
-  insert_comments_one(object: {todo_id: $id, user_id: $user, content: $body}) { id }
-}`;
-const EDIT = `mutation E($id: uuid!, $body: String!) {
-  update_comments(where: {id: {_eq: $id}}, _set: {content: $body}) { affected_rows }
-}`;
-
 /**
  * Post the run's status comment — or take over the one an unfinished earlier attempt
  * left — and return `say(kind, extra)` to edit it. Without a Kanban or a card, `say`
@@ -102,21 +90,34 @@ export async function openStatus(
   };
   let commentId = null;
   const write = async (body) => {
-    if (!kanban?.endpoint || !kanban?.adminSecret || !todoId) return;
+    if (!hasKanban(kanban) || !todoId) return;
     try {
       if (commentId)
-        return void (await gql(kanban, EDIT, { id: commentId, body }));
-      const { boards } = await gql(kanban, BOARD, { repo: `%${repoName}%` });
-      const user = boards?.[0]?.user_id;
+        return void (await runnerApi(kanban, "updateComment", {
+          id: commentId,
+          content: body,
+        }));
+      const user = (await boardOf(kanban, repoName))?.user_id;
       if (!user) return;
-      const { comments } = await gql(kanban, MINE, { id: todoId, user });
+      const comments = await runnerApi(kanban, "comments", {
+        todoId,
+        userId: user,
+      });
       const last = comments.find((c) => STATUS.test(c.content ?? ""));
       if (last && !last.content.startsWith(KINDS.finished)) {
         commentId = last.id;
-        await gql(kanban, EDIT, { id: commentId, body });
+        await runnerApi(kanban, "updateComment", {
+          id: commentId,
+          content: body,
+        });
       } else
-        commentId = (await gql(kanban, POST, { id: todoId, user, body }))
-          .insert_comments_one.id;
+        commentId = (
+          await runnerApi(kanban, "createComment", {
+            todoId,
+            userId: user,
+            content: body,
+          })
+        ).id;
     } catch (err) {
       log?.(`  status comment: ${err.message}`);
     }

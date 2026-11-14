@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { KANBAN, fakeApi } from "./fakeApi.js";
 import { closeLoop } from "../src/kanban.js";
 
 const CARD = "951ba857-ccf1-4cfa-9e97-cb85420071a0";
@@ -40,26 +41,24 @@ function world({ kanbanDown = false } = {}) {
   chmodSync(join(bin, "gh"), 0o755);
   process.env.PATH = `${bin}${delimiter}${process.env.PATH}`;
 
-  globalThis.fetch = async (_url, { body }) => {
-    if (kanbanDown) throw new Error("Hasura down");
-    const { query } = JSON.parse(body);
-    appendFileSync(calls, `kanban ${query.match(/^\w+ (\w+)/)[1]}\n`);
-    const data = query.includes("boards(")
-      ? {
-          boards: [
-            { id: "b", user_id: "u", lists: [{ id: "r", name: "Review" }] },
-          ],
-        }
-      : query.includes("comments(")
-        ? { comments: [] }
-        : {};
-    return { json: async () => ({ data }) };
+  const say = (op, data) => () => {
+    if (kanbanDown) throw new Error("Kanban down");
+    appendFileSync(calls, `kanban ${op}\n`);
+    return data;
   };
-  const kanban = {
-    endpoint: "x",
-    adminSecret: "s",
-    lists: { review: "Review" },
-  };
+  fakeApi({
+    board: say("board", {
+      id: "b",
+      user_id: "u",
+      lists: [{ id: "r", name: "Review" }],
+    }),
+    cards: say("cards", []),
+    comments: say("comments", []),
+    updateCard: say("updateCard", { updated: true }),
+    createComment: say("createComment", { id: "c" }),
+    uploads: say("uploads", []),
+  });
+  const kanban = { ...KANBAN, lists: { review: "Review" } };
   const run = () =>
     closeLoop(kanban, {
       repoName: "o/r",
@@ -85,7 +84,7 @@ test(
     const lines = await run();
     const order = log();
     assert.ok(
-      order.indexOf("kanban S") < order.indexOf("gh issue comment"),
+      order.indexOf("kanban createComment") < order.indexOf("gh issue comment"),
       order.join(" → "),
     );
     assert.ok(lines.includes("issue #80 commented and closed"));
@@ -97,5 +96,5 @@ test("a Kanban that is down still gets the issue closed", posix, async () => {
   const { run, log } = world({ kanbanDown: true });
   const lines = await run();
   assert.ok(log().includes("gh issue close"));
-  assert.ok(lines.some((l) => l.startsWith("kanban: Hasura down")));
+  assert.ok(lines.some((l) => l.startsWith("kanban: board: Kanban down")));
 });

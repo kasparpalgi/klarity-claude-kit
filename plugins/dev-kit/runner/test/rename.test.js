@@ -9,6 +9,7 @@ import {
   readdirSync,
   writeFileSync,
 } from "node:fs";
+import { KANBAN, fakeApi } from "./fakeApi.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -56,7 +57,7 @@ function clone(root, path, origin) {
   return dir;
 }
 
-/** A code root and config.json, and a fetch that records what the Kanban was told. */
+/** A code root and config.json, and a Kanban that records what it was told. */
 function fixture(boardRepo, extra = {}) {
   const root = mkdtempSync(join(tmp, "root-"));
   const code = join(root, "code");
@@ -65,8 +66,7 @@ function fixture(boardRepo, extra = {}) {
   writeFileSync(
     path,
     JSON.stringify({
-      endpoint: "http://x/v1/graphql",
-      adminSecret: "s",
+      ...KANBAN,
       repos: {},
       codeRoot: code,
       ...extra,
@@ -85,11 +85,10 @@ function fixture(boardRepo, extra = {}) {
     }),
   };
   const writes = [];
-  globalThis.fetch = async (_url, { body }) => {
-    const { query, variables } = JSON.parse(body);
-    if (query.startsWith("mutation")) writes.push(variables);
-    return { json: async () => ({ data: { boards: [board] } }) };
-  };
+  fakeApi({
+    boards: () => [board],
+    setBoardGithub: (input) => void writes.push(input),
+  });
   return { root, code, path, board, writes };
 }
 

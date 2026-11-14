@@ -32,8 +32,7 @@ if (dryRun) {
   }
 } else {
   const { kanban } = loadConfig();
-  if (!kanban.endpoint || !kanban.adminSecret)
-    throw new Error("config.json is missing endpoint/adminSecret");
+  if (!kanban.apiToken) throw new Error("config.json is missing apiToken");
   const affected = await upsertPricing(kanban, rows);
   console.log(`upserted ${affected} models`);
 }

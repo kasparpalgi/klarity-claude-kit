@@ -19,49 +19,36 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  BOARD,
-  CARDS_AT,
-  DROP,
-  NEW_CARD,
+  boardOf,
   cardIdOf,
-  gql,
+  cardsAt,
+  hasKanban,
+  runnerApi,
   titleOf,
 } from "./kanban.js";
 import { git } from "./repo.js";
 
-const CLAIM = `mutation C($id: uuid!, $m: String!) {
-  update_todos(
-    where: {id: {_eq: $id}, _or: [{agent_machine: {_is_null: true}}, {agent_machine: {_ilike: $m}}]}
-    _set: {agent_machine: $m}
-  ) { affected_rows }
-}`;
-
-const CARD = `query K($id: uuid!) { todos_by_pk(id: $id) { id } }`;
-
 /** The card already filed for `path`, the oldest when a race left two. */
 export const cardAt = async (kanban, path) =>
-  (await gql(kanban, CARDS_AT, { path })).todos[0]?.id ?? null;
+  (await cardsAt(kanban, path))[0]?.id ?? null;
 
 /** A TODO card for a file that has none; null when the repo has no board to put it on. */
 async function adopt(kanban, { repoName, path, text }) {
   const known = await cardAt(kanban, path);
   if (known) return known;
-  const board = (await gql(kanban, BOARD, { repo: `%${repoName}%` }))
-    .boards?.[0];
+  const board = await boardOf(kanban, repoName);
   const want = kanban.lists.todo.toLowerCase();
   const list = board?.lists.find((l) => l.name.toLowerCase() === want)?.id;
   if (!list) return null;
-  const { insert_todos_one: card } = await gql(kanban, NEW_CARD, {
-    o: {
-      title: titleOf(text, path),
-      content: text,
-      list_id: list,
-      user_id: board.user_id,
-      task_file_path: path,
-    },
+  const card = await runnerApi(kanban, "createCard", {
+    title: titleOf(text, path),
+    content: text,
+    list_id: list,
+    user_id: board.user_id,
+    task_file_path: path,
   });
   const first = await cardAt(kanban, path);
-  if (first !== card.id) await gql(kanban, DROP, { id: card.id });
+  if (first !== card.id) await runnerApi(kanban, "deleteCard", { id: card.id });
   return first;
 }
 
@@ -101,15 +88,11 @@ async function pushClaim(repoPath, dir, task, me) {
 }
 
 const swap = async (kanban, id, me) =>
-  (await gql(kanban, CLAIM, { id, m: me })).update_todos.affected_rows === 1;
-
-const RELEASE = `mutation R($id: uuid!, $m: String!) {
-  update_todos(where: {id: {_eq: $id}, agent_machine: {_ilike: $m}}, _set: {agent_machine: null}) { affected_rows }
-}`;
+  (await runnerApi(kanban, "claimCard", { id, machine: me })).claimed;
 
 /** The card back on Auto, if `me` holds it: true when it did (handover.js). */
 export const release = async (kanban, id, me) =>
-  (await gql(kanban, RELEASE, { id, m: me })).update_todos.affected_rows === 1;
+  (await runnerApi(kanban, "releaseCard", { id, machine: me })).released;
 
 /** true or false as the board decides; null when there is no card to lock with. */
 async function cardClaim(kanban, { repoName, dir, task, me }) {
@@ -118,7 +101,8 @@ async function cardClaim(kanban, { repoName, dir, task, me }) {
   if (named) {
     if (await swap(kanban, named, me)) return true;
     // A card deleted since the file was written is not another runner's claim.
-    if ((await gql(kanban, CARD, { id: named })).todos_by_pk) return false;
+    if ((await runnerApi(kanban, "cards", { ids: [named] })).length)
+      return false;
   }
   const path = join(dir, task.name);
   const id = await adopt(kanban, { repoName, path, text });
@@ -126,15 +110,14 @@ async function cardClaim(kanban, { repoName, dir, task, me }) {
   if (!(await swap(kanban, id, me))) return false;
   // Two inserts in flight can each see their own card first; the later look decides.
   if ((await cardAt(kanban, path)) === id) return true;
-  await gql(kanban, DROP, { id });
+  await runnerApi(kanban, "deleteCard", { id });
   return false;
 }
 
 /** true when this runner now owns the task, false when another one does. */
 export async function claim(kanban, { repoPath, repoName, dir, task, me }) {
-  const won =
-    kanban?.endpoint && kanban?.adminSecret
-      ? await cardClaim(kanban, { repoName, dir, task, me })
-      : null;
+  const won = hasKanban(kanban)
+    ? await cardClaim(kanban, { repoName, dir, task, me })
+    : null;
   return won ?? pushClaim(repoPath, dir, task, me);
 }

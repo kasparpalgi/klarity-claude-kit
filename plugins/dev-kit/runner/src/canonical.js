@@ -10,7 +10,7 @@
 import { execFile } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { promisify } from "node:util";
-import { gql } from "./kanban.js";
+import { runnerApi } from "./kanban.js";
 
 const exec = promisify(execFile);
 
@@ -68,10 +68,6 @@ export function renameInConfig(path, from, to) {
   writeFileSync(path, JSON.stringify(file, null, 2) + "\n");
 }
 
-const SET_GITHUB = `mutation G($id: uuid!, $github: String!) {
-  update_boards_by_pk(pk_columns: {id: $id}, _set: {github: $github}) { id }
-}`;
-
 /**
  * Point a board at the current name. The runner finds a repo's board by searching
  * `boards.github` for the config key, so a stale board leaves its cards out of Review.
@@ -84,5 +80,5 @@ export async function retargetBoard(kanban, board, canon) {
     repo,
     full_name: canon,
   });
-  await gql(kanban, SET_GITHUB, { id: board.id, github });
+  await runnerApi(kanban, "setBoardGithub", { id: board.id, github });
 }

@@ -9,7 +9,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
-import { gql } from "./kanban.js";
+import { hasKanban, runnerApi } from "./kanban.js";
 
 const PROJECTS = join(homedir(), ".claude", "projects");
 const M = 1_000_000;
@@ -108,7 +108,8 @@ export function costOf(byModel, pricing) {
       ? (t.input * p.input_per_mtok +
           t.output * p.output_per_mtok +
           t.cacheRead * p.cache_read_per_mtok +
-          t.cacheWrite * p.cache_write_per_mtok) / M
+          t.cacheWrite * p.cache_write_per_mtok) /
+        M
       : 0;
     costUsd += c;
     // Dominant = the priciest slice; unpriced models all tie at 0, so output
@@ -129,25 +130,6 @@ export const totalsOf = (byModel) =>
     Object.fromEntries(KINDS.map((k) => [k, 0])),
   );
 
-const PRICING = `query P { claude_model_pricing { model input_per_mtok
-  output_per_mtok cache_read_per_mtok cache_write_per_mtok } }`;
-
-// Same `github`-is-text dance as kanban.js: `_contains` is a runtime error there.
-const OWNER = `query O($repo: String!) {
-  boards(where: {github: {_ilike: $repo}}, limit: 1) { user_id }
-}`;
-
-// Idempotent on session_id: a re-run is a *new* session (new row); re-ingesting
-// the same transcript only refreshes it.
-const UPSERT = `mutation U($row: claude_usage_insert_input!) {
-  insert_claude_usage_one(object: $row, on_conflict: {
-    constraint: claude_usage_session_id_key
-    update_columns: [todo_id user_id repo model input_tokens output_tokens
-      cache_read_tokens cache_write_tokens usage_by_model cost_usd
-      started_at ended_at]
-  }) { id }
-}`;
-
 /**
  * Record one `claude_usage` row for the session a run just finished. Returns a
  * log line, or null when the Kanban is not configured. A missing transcript,
@@ -157,9 +139,9 @@ const UPSERT = `mutation U($row: claude_usage_insert_input!) {
 export async function recordUsage(
   kanban,
   { repoName, repoPath, todoId = null, sinceMs, dir = projectDir(repoPath) },
-  gqlFn = gql,
+  api = runnerApi,
 ) {
-  if (!kanban?.endpoint || !kanban?.adminSecret) return null;
+  if (!hasKanban(kanban)) return null;
   const file = findSessionFile(dir, sinceMs);
   if (!file) return "usage: no session transcript for this run";
   const sessionId = basename(file, ".jsonl");
@@ -169,11 +151,11 @@ export async function recordUsage(
   if (!Object.keys(byModel).length)
     return `usage: ${sessionId} has no assistant turns`;
 
-  const [{ claude_model_pricing: prices }, { boards }] = await Promise.all([
-    gqlFn(kanban, PRICING, {}),
-    gqlFn(kanban, OWNER, { repo: `%${repoName}%` }),
+  const [prices, board] = await Promise.all([
+    api(kanban, "pricing", {}),
+    api(kanban, "board", { repo: repoName }),
   ]);
-  const userId = boards?.[0]?.user_id;
+  const userId = board?.user_id;
   if (!userId) return `usage: no board owner for ${repoName} — not recorded`;
 
   const pricing = Object.fromEntries(prices.map((r) => [r.model, r]));
@@ -194,7 +176,7 @@ export async function recordUsage(
     started_at: startedAt,
     ended_at: endedAt,
   };
-  await gqlFn(kanban, UPSERT, { row });
+  await api(kanban, "recordUsage", { row });
   const read = t.input + t.cacheRead + t.cacheWrite;
   const warn = missing.length ? ` (no price for ${missing.join(", ")})` : "";
   return `usage: ${model} ${read} in / ${t.output} out → $${costUsd.toFixed(4)}${warn}`;

@@ -14,12 +14,11 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import {
-  BOARD,
-  CARDS_AT,
-  DROP,
-  NEW_CARD,
+  boardOf,
   cardIdOf,
-  gql,
+  cardsAt,
+  hasKanban,
+  runnerApi,
   titleOf,
 } from "./kanban.js";
 import { issueOf } from "./issue.js";
@@ -30,10 +29,6 @@ const run = promisify(execFile);
 
 // Suffixless: -TODO is queued work, -DONE / -BLOCKED are finished.
 const FOLLOW_UP = /^\d{3,}-.*(?<!-TODO)(?<!-DONE)(?<!-BLOCKED)\.md$/i;
-
-const FILED = `mutation F($id: uuid!, $set: todos_set_input!) {
-  update_todos_by_pk(pk_columns: {id: $id}, _set: $set) { id }
-}`;
 
 /** The same line the Kanban writes; issue.js closes the issue from it when the task ends. */
 export const withIssue = (text, n) =>
@@ -94,24 +89,22 @@ async function push(repoPath) {
 
 async function fileOne(kanban, { repoName, repoPath, dir, board, backlog }, f) {
   const text = readFileSync(join(repoPath, f), "utf8");
-  if ((await gql(kanban, CARDS_AT, { path: f })).todos.length) return null;
+  if ((await cardsAt(kanban, f)).length) return null;
 
   const title = titleOf(text, f);
-  const { insert_todos_one: card } = await gql(kanban, NEW_CARD, {
-    o: {
-      title,
-      content: text,
-      list_id: backlog,
-      user_id: board.user_id,
-      task_file_path: f,
-    },
+  const card = await runnerApi(kanban, "createCard", {
+    title,
+    content: text,
+    list_id: backlog,
+    user_id: board.user_id,
+    task_file_path: f,
   });
-  if ((await gql(kanban, CARDS_AT, { path: f })).todos[0]?.id !== card.id) {
-    await gql(kanban, DROP, { id: card.id });
+  if ((await cardsAt(kanban, f))[0]?.id !== card.id) {
+    await runnerApi(kanban, "deleteCard", { id: card.id });
     return null;
   }
   if (await movedOnOrigin(repoPath, f)) {
-    await gql(kanban, DROP, { id: card.id });
+    await runnerApi(kanban, "deleteCard", { id: card.id });
     return null;
   }
 
@@ -132,7 +125,7 @@ async function fileOne(kanban, { repoName, repoPath, dir, board, backlog }, f) {
   );
   const pushed = await push(repoPath);
 
-  await gql(kanban, FILED, {
+  await runnerApi(kanban, "updateCard", {
     id: card.id,
     set: {
       ...(pushed && { task_file_path: path, content: body }),
@@ -152,7 +145,7 @@ export async function fileFollowUps(
   kanban,
   { repoName, repoPath, dir, since },
 ) {
-  if (!kanban?.endpoint || !kanban?.adminSecret) return [];
+  if (!hasKanban(kanban)) return [];
   const { stdout } = await git(
     ["diff", "--name-only", "--diff-filter=A", `${since}..HEAD`, "--", dir],
     repoPath,
@@ -166,8 +159,7 @@ export async function fileFollowUps(
 
   // Only a board connected to this repo files issues — the repos that already use
   // the issue-number-is-task-number convention.
-  const board = (await gql(kanban, BOARD, { repo: `%${repoName}%` }))
-    .boards?.[0];
+  const board = await boardOf(kanban, repoName);
   if (!board) return [];
   const want = kanban.lists.backlog.toLowerCase();
   const backlog = board.lists.find((l) => l.name.toLowerCase() === want)?.id;

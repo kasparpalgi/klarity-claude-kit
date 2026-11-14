@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { KANBAN, fakeApi } from "./fakeApi.js";
 import { STATUS, costIn, openStatus, statusLine } from "../src/status.js";
 
 const CARD = "aaaaaaaa-1111-2222-3333-444455556666";
@@ -44,28 +45,23 @@ test("reads the cost out of recordUsage's log line", () => {
   assert.equal(costIn(null), null);
 });
 
-/** An in-memory Hasura holding one board and the card's comments. */
+/** An in-memory Kanban holding one board and the card's comments. */
 function fakeKanban(comments = []) {
-  const calls = [];
   let seq = 0;
-  globalThis.fetch = async (_url, { body }) => {
-    const { query, variables: v } = JSON.parse(body);
-    calls.push(query.match(/^\w+ (\w)/)[1]);
-    let data;
-    if (query.includes("boards("))
-      data = { boards: [{ id: "b", user_id: "u", lists: [] }] };
-    else if (query.includes("insert_comments_one")) {
-      const c = { id: `c${++seq}`, content: v.body, user_id: v.user };
+  const calls = fakeApi({
+    board: () => ({ id: "b", user_id: "u", lists: [] }),
+    createComment: (i) => {
+      const c = { id: `c${++seq}`, content: i.content, user_id: i.userId };
       comments.push(c);
-      data = { insert_comments_one: { id: c.id } };
-    } else if (query.includes("update_comments")) {
-      const c = comments.find((x) => x.id === v.id);
-      c.content = v.body;
-      data = { update_comments: { affected_rows: 1 } };
-    } else data = { comments: [...comments].reverse() };
-    return { json: async () => ({ data }) };
-  };
-  return { kanban: { endpoint: "x", adminSecret: "s" }, comments, calls };
+      return { id: c.id };
+    },
+    updateComment: (i) => {
+      comments.find((x) => x.id === i.id).content = i.content;
+      return { id: i.id };
+    },
+    comments: () => [...comments].reverse(),
+  });
+  return { kanban: KANBAN, comments, calls };
 }
 
 test("posts one comment when the run starts and edits it after, never re-posting", async () => {
@@ -128,24 +124,28 @@ test("no Kanban or no card: nothing is posted and nothing throws", async () => {
   const { calls } = fakeKanban();
   const say = await openStatus({}, { ...run, repoName: "o/r", todoId: CARD });
   await say("finished");
-  await openStatus(
-    { endpoint: "x", adminSecret: "s" },
-    { ...run, repoName: "o/r", todoId: null },
-  );
+  await openStatus(KANBAN, { ...run, repoName: "o/r", todoId: null });
   assert.equal(calls.length, 0);
 });
 
-test("a Hasura error is a log line, not a failed run", async () => {
-  globalThis.fetch = async () => ({
-    json: async () => ({ errors: [{ message: "boom" }] }),
+test("a Kanban error is a log line, not a failed run", async () => {
+  fakeApi({
+    board: () => {
+      throw new Error("boom");
+    },
   });
   const lines = [];
-  const say = await openStatus(
-    { endpoint: "x", adminSecret: "s" },
-    { ...run, repoName: "o/r", todoId: CARD, log: (l) => lines.push(l) },
-  );
+  const say = await openStatus(KANBAN, {
+    ...run,
+    repoName: "o/r",
+    todoId: CARD,
+    log: (l) => lines.push(l),
+  });
   await say("failed");
-  assert.deepEqual(lines, ["  status comment: boom", "  status comment: boom"]);
+  assert.deepEqual(lines, [
+    "  status comment: board: boom",
+    "  status comment: board: boom",
+  ]);
 });
 
 test("the Remote Control link, once known, stays on every later line (#85)", async () => {

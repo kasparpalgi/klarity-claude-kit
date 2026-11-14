@@ -21,7 +21,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pushFiles, release } from "./claim.js";
-import { cardIdOf } from "./kanban.js";
+import { cardIdOf, hasKanban } from "./kanban.js";
 import { reasoned, withoutMachine } from "./machine.js";
 import { parkDirty } from "./repo.js";
 import { closeWorktree, onOrigin, worktreeOf } from "./worktree.js";
@@ -42,7 +42,7 @@ export async function handOver({
   until,
   live,
 }) {
-  const board = kanban?.endpoint && kanban?.adminSecret;
+  const board = hasKanban(kanban);
   const given = [];
   const files = [];
   for (const t of pending) {

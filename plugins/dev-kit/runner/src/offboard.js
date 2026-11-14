@@ -14,7 +14,8 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalName, matchName, resolver } from "./canonical.js";
-import { gql } from "./kanban.js";
+import { kanbanOf } from "./config.js";
+import { runnerApi } from "./kanban.js";
 import { repoOf } from "./onboard.js";
 import { dirtyPaths, git } from "./repo.js";
 import { saveSecrets } from "./secrets.js";
@@ -23,7 +24,6 @@ import * as state from "./state.js";
 const CONFIG =
   process.env.KANBAN_RUNNER_CONFIG ??
   join(dirname(dirname(fileURLToPath(import.meta.url))), "config.json");
-const BOARDS = `query { boards(where: {github: {_is_null: false}}) { github archived_at } }`;
 
 const expand = (dir) =>
   resolve(dir.startsWith("~/") ? join(homedir(), dir.slice(2)) : dir);
@@ -95,12 +95,7 @@ export async function offboard({
   lookup = canonicalName,
 } = {}) {
   const file = JSON.parse(readFileSync(configPath, "utf8"));
-  boards ??= (
-    await gql(
-      { endpoint: file.endpoint, adminSecret: file.adminSecret },
-      BOARDS,
-    )
-  ).boards;
+  boards ??= await runnerApi(kanbanOf(file), "boards");
   const repos = file.repos ?? {};
   const out = [];
   const name = resolver(lookup);

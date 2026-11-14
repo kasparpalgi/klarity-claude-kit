@@ -32,7 +32,8 @@ import {
   retargetBoard,
   same,
 } from "./canonical.js";
-import { gql } from "./kanban.js";
+import { kanbanOf } from "./config.js";
+import { runnerApi } from "./kanban.js";
 import { scaffold } from "./scaffold.js";
 import { restoreSecrets } from "./secrets.js";
 
@@ -41,11 +42,9 @@ const HERE = dirname(dirname(fileURLToPath(import.meta.url)));
 const CONFIG = process.env.KANBAN_RUNNER_CONFIG ?? join(HERE, "config.json");
 
 // `boards.github` is text holding JSON, so the repo is parsed out here rather than
-// filtered in the query. An archived board is not a project anyone is working on.
-const BOARDS = `query { boards(
-  where: {github: {_is_null: false}, archived_at: {_is_null: true}}
-  order_by: {name: asc}
-) { id name github client_id } }`;
+// filtered here. An archived board is not a project anyone is working on.
+const liveBoards = async (kanban) =>
+  (await runnerApi(kanban, "boards")).filter((b) => !b.archived_at);
 
 /** A board opts its repo into claude-seo with `"seo": true` in its github JSON. */
 export function seoOf(github) {
@@ -205,8 +204,8 @@ export async function onboard({
 } = {}) {
   const file = JSON.parse(readFileSync(configPath, "utf8"));
   const root = file.codeRoot ?? "~/Documents/GitHub";
-  const kanban = { endpoint: file.endpoint, adminSecret: file.adminSecret };
-  const { boards } = await gql(kanban, BOARDS);
+  const kanban = kanbanOf(file);
+  const boards = await liveBoards(kanban);
 
   // `missing({})` is every connected board, deduped — one repo, two boards, one entry.
   const repos = file.repos ?? {};

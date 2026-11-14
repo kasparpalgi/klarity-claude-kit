@@ -44,66 +44,39 @@ export function titleOf(text, filename) {
   return m ? m[1].trim() : basename(filename, ".md");
 }
 
-/** POST a GraphQL op with the admin secret. Shared with `sessionUsage.js`. */
-export async function gql(kanban, query, variables) {
-  const res = await fetch(kanban.endpoint, {
+/** True when the runner may talk to the Kanban: it needs the runner API token. */
+export const hasKanban = (kanban) => !!kanban?.apiToken;
+
+/**
+ * Call one op of the Kanban's runner API: `POST <appUrl>/api/runner/<op>` with the
+ * bearer token, answering `{ data }` or `{ error }` (todzz #231). `appUrl` must be the
+ * canonical host (`https://www.todzz.eu`): fetch drops `Authorization` on a
+ * cross-origin redirect, and `todzz.eu` redirects.
+ */
+export async function runnerApi(kanban, op, input = {}) {
+  const res = await fetch(`${kanban.appUrl}/api/runner/${op}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-hasura-admin-secret": kanban.adminSecret,
+      authorization: `Bearer ${kanban.apiToken}`,
     },
-    body: JSON.stringify({ query, variables }),
+    body: JSON.stringify(input),
     signal: AbortSignal.timeout(15000),
   });
-  const body = await res.json();
-  if (body.errors)
-    throw new Error(body.errors.map((e) => e.message).join("; "));
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.error)
+    throw new Error(`${op}: ${body.error ?? `HTTP ${res.status}`}`);
   return body.data;
 }
 
-// `boards.github` is a text column holding JSON, not jsonb — `_contains` is a
-// runtime error on it, which is what the app's own GET_BOARD_BY_REPO still does.
-export const BOARD = `query B($repo: String!) {
-  boards(where: {github: {_ilike: $repo}}, limit: 1) {
-    id user_id lists(order_by: {sort_order: asc}) { id name }
-  }
-}`;
+/** The board connected to a repo, with its lists; null when none is. */
+export const boardOf = (kanban, repoName) =>
+  runnerApi(kanban, "board", { repo: repoName });
 
-// Every card filed for a path, oldest first: the first one in is the lock (followup.js,
-// claim.js) and a racing runner drops its own.
-export const CARDS_AT = `query A($path: String!) {
-  todos(where: {task_file_path: {_eq: $path}}, order_by: [{created_at: asc}, {id: asc}]) { id }
-}`;
-export const NEW_CARD = `mutation N($o: todos_insert_input!) { insert_todos_one(object: $o) { id } }`;
-export const DROP = `mutation D($id: uuid!) { delete_todos_by_pk(id: $id) { id } }`;
-
-// The card ends where the task file ends: move it to Review and point it at the -DONE
-// file. The Results go into a comment only — the card body stays the original request.
-const MOVE = `mutation M($id: uuid!, $list: uuid!, $path: String!) {
-  update_todos_by_pk(
-    pk_columns: {id: $id}
-    _set: {list_id: $list, task_file_path: $path}
-  ) { id }
-}`;
-
-const SAY = `mutation S($id: uuid!, $user: uuid!, $body: String!) {
-  insert_comments(objects: {todo_id: $id, user_id: $user, content: $body}) { affected_rows }
-}`;
-
-// A re-run must not re-post the same Results: the move is idempotent on its own,
-// a comment is not.
-const SAID = `query D($id: uuid!, $body: String!) {
-  comments(where: {todo_id: {_eq: $id}, content: {_eq: $body}}, limit: 1) { id }
-}`;
-
-// Update only the file path — no list change. Used when the Review list does not
-// exist yet: the card stays where it is but still links to the -DONE file.
-const SET_PATH = `mutation P($id: uuid!, $path: String!) {
-  update_todos_by_pk(
-    pk_columns: {id: $id}
-    _set: {task_file_path: $path}
-  ) { id }
-}`;
+/** Every card filed for a path, oldest first: the first one in is the lock
+ * (followup.js, claim.js) and a racing runner drops its own. */
+export const cardsAt = (kanban, ...paths) =>
+  runnerApi(kanban, "cards", { paths });
 
 /** The `-DONE.md` — or `-BLOCKED.md` — this task ended as. Keyed by stem, because a
  * bare NNN can belong to two tasks and this file decides which card gets the Results. */
@@ -151,17 +124,14 @@ async function closeCard(
   kanban,
   { repoName, full, dir, stem, done, text, body },
 ) {
-  if (!kanban?.endpoint || !kanban?.adminSecret) return [];
+  if (!hasKanban(kanban)) return [];
   const out = [];
   // A card the runner adopted for a card-less file (claim.js) is found by its path.
   const id =
-    cardIdOf(text) ??
-    (await gql(kanban, CARDS_AT_PATHS, { paths: [`${dir}/${stem}-TODO.md`] }))
-      .todos[0]?.id;
+    cardIdOf(text) ?? (await cardsAt(kanban, `${dir}/${stem}-TODO.md`))[0]?.id;
   if (!id) return [`no card id in ${done} — no card to close`];
 
-  const { boards } = await gql(kanban, BOARD, { repo: `%${repoName}%` });
-  const board = boards?.[0];
+  const board = await boardOf(kanban, repoName);
   if (!board) return [`no board connected to ${repoName}`];
   const listId = (name) =>
     board.lists.find((l) => l.name.toLowerCase() === name.toLowerCase())?.id;
@@ -170,22 +140,35 @@ async function closeCard(
   // the Review list does not exist yet (e.g. board was just created).
   const review = listId(kanban.lists.review);
   if (review) {
-    await gql(kanban, MOVE, { id, list: review, path: `${dir}/${done}` });
+    await runnerApi(kanban, "updateCard", {
+      id,
+      set: { list_id: review, task_file_path: `${dir}/${done}` },
+    });
   } else {
-    await gql(kanban, SET_PATH, { id, path: `${dir}/${done}` });
+    await runnerApi(kanban, "updateCard", {
+      id,
+      set: { task_file_path: `${dir}/${done}` },
+    });
     out.push(
       `no "${kanban.lists.review}" list — card path updated but not moved`,
     );
   }
 
   // Always post Results as a comment; idempotent so re-runs don't duplicate it.
-  const { comments } = await gql(kanban, SAID, { id, body });
+  const comments = await runnerApi(kanban, "comments", {
+    todoId: id,
+    content: body,
+  });
   if (comments.length)
     out.push(
       `${review ? `card → ${kanban.lists.review}` : "card"} (results already posted)`,
     );
   else {
-    await gql(kanban, SAY, { id, user: board.user_id, body });
+    await runnerApi(kanban, "createComment", {
+      todoId: id,
+      userId: board.user_id,
+      content: body,
+    });
     out.push(
       review
         ? `card → ${kanban.lists.review}, results posted`
@@ -198,16 +181,6 @@ async function closeCard(
   );
   return [...out, ...shots];
 }
-
-const CARDS = `query C($ids: [uuid!]!) {
-  todos(where: {id: {_in: $ids}}) { id task_file_path list { name } }
-}`;
-
-const CARDS_AT_PATHS = `query P($paths: [String!]!) {
-  todos(where: {task_file_path: {_in: $paths}}, order_by: [{created_at: asc}, {id: asc}]) {
-    id task_file_path list { name }
-  }
-}`;
 
 /**
  * Card id → its -DONE/-BLOCKED file, for every finished task file in `full`, and
@@ -250,16 +223,14 @@ export function stuckCards(todos, byCard, lists) {
  * ran (tekdok 035). Close those from the file, whoever renamed it.
  */
 export async function reconcileCards(kanban, { repoName, repoPath, dir }) {
-  if (!kanban?.endpoint || !kanban?.adminSecret) return [];
+  if (!hasKanban(kanban)) return [];
   const { byCard, byPath } = finishedCards(join(repoPath, dir), dir);
   const todos = byCard.size
-    ? (await gql(kanban, CARDS, { ids: [...byCard.keys()] })).todos
+    ? await runnerApi(kanban, "cards", { ids: [...byCard.keys()] })
     : [];
   // Cards the runner adopted for card-less files (claim.js) still point at the -TODO.
   if (byPath.size)
-    for (const t of (
-      await gql(kanban, CARDS_AT_PATHS, { paths: [...byPath.keys()] })
-    ).todos) {
+    for (const t of (await cardsAt(kanban, ...byPath.keys())).todos) {
       if (byCard.has(t.id)) continue;
       byCard.set(t.id, byPath.get(t.task_file_path));
       todos.push(t);

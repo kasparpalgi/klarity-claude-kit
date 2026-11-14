@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { KANBAN, fakeApi } from "./fakeApi.js";
 
 /** A bare origin, two runner clones, a fake `gh` that counts the issues it opens. */
 export function setup() {
@@ -63,7 +64,7 @@ export function setup() {
 }
 
 /**
- * An in-memory Hasura holding one board and its cards. The first `racers` card
+ * An in-memory Kanban holding one board and its cards. The first `racers` card
  * lookups wait for each other, so that many runners all pass the pre-check before
  * any of them inserts — the race the card lock exists for.
  */
@@ -73,55 +74,42 @@ export function fakeKanban(racers = 1) {
   let release;
   const gate = new Promise((r) => (release = r));
   let waiting = 0;
-  const kanban = {
-    endpoint: "x",
-    adminSecret: "s",
-    lists: { backlog: "Backlog" },
-    cards,
-    inserts: 0,
-  };
-  globalThis.fetch = async (_url, { body }) => {
-    const { query, variables: v } = JSON.parse(body);
-    await new Promise((r) => setImmediate(r));
-    if (query.includes("todos(where") && waiting < racers) {
-      if (++waiting === racers) release();
-      await gate;
-    }
-    let data;
-    if (query.includes("boards("))
-      data = {
-        boards: [
-          {
-            id: "b",
-            user_id: "u",
-            lists: [{ id: "l-backlog", name: "Backlog" }],
-          },
-        ],
-      };
-    else if (query.includes("insert_todos_one")) {
-      const card = { ...v.o, id: `c${++seq}` };
+  const kanban = { ...KANBAN, lists: { backlog: "Backlog" }, cards, inserts: 0 };
+  fakeApi({
+    board: () => ({
+      id: "b",
+      user_id: "u",
+      lists: [{ id: "l-backlog", name: "Backlog" }],
+    }),
+    createCard: (o) => {
+      const card = { ...o, id: `c${++seq}` };
       kanban.inserts++;
       cards.push(card);
-      data = { insert_todos_one: { id: card.id } };
-    } else if (query.includes("delete_todos_by_pk")) {
+      return { id: card.id };
+    },
+    deleteCard: ({ id }) => {
       cards.splice(
-        cards.findIndex((c) => c.id === v.id),
+        cards.findIndex((c) => c.id === id),
         1,
       );
-      data = {};
-    } else if (query.includes("update_todos_by_pk")) {
+      return { deleted: true };
+    },
+    updateCard: ({ id, set }) => {
       Object.assign(
-        cards.find((c) => c.id === v.id),
-        v.set,
+        cards.find((c) => c.id === id),
+        set,
       );
-      data = {};
-    } else
-      data = {
-        todos: cards
-          .filter((c) => c.task_file_path === v.path)
-          .map(({ id }) => ({ id })),
-      };
-    return { json: async () => ({ data }) };
-  };
+      return { updated: true };
+    },
+    cards: async ({ paths }) => {
+      if (waiting < racers) {
+        if (++waiting === racers) release();
+        await gate;
+      }
+      return cards
+        .filter((c) => paths.includes(c.task_file_path))
+        .map(({ id }) => ({ id }));
+    },
+  });
   return kanban;
 }

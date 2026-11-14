@@ -112,20 +112,15 @@ test("findSessionFile takes the newest transcript touched by the run", () => {
   assert.equal(findSessionFile(join(dir, "nope"), 0), null);
 });
 
-const KANBAN = { endpoint: "http://x/v1/graphql", adminSecret: "s" };
+const KANBAN = { apiToken: "t", appUrl: "http://x" };
 
-function stubGql(sent) {
-  return async (_kanban, query, vars) => {
-    sent.push({ query, vars });
-    if (query.includes("claude_model_pricing"))
-      return {
-        claude_model_pricing: Object.entries(PRICING).map(([model, p]) => ({
-          model,
-          ...p,
-        })),
-      };
-    if (query.includes("boards")) return { boards: [{ user_id: "user-1" }] };
-    return { insert_claude_usage_one: { id: "row-1" } };
+function stubApi(sent) {
+  return async (_kanban, op, input) => {
+    sent.push({ op, input });
+    if (op === "pricing")
+      return Object.entries(PRICING).map(([model, p]) => ({ model, ...p }));
+    if (op === "board") return { user_id: "user-1" };
+    return { id: "row-1" };
   };
 }
 
@@ -144,11 +139,12 @@ test("recordUsage upserts one row for the session", async () => {
   const line = await recordUsage(
     KANBAN,
     { repoName: "me/repo", repoPath: "/x", todoId: "card-1", sinceMs: since, dir },
-    stubGql(sent),
+    stubApi(sent),
   );
   assert.match(line, /claude-opus-4-8/);
   assert.match(line, /\$25\.0000/);
-  const { row } = sent.at(-1).vars;
+  assert.equal(sent.at(-1).op, "recordUsage");
+  const { row } = sent.at(-1).input;
   assert.equal(row.session_id, "sess-abc");
   assert.equal(row.todo_id, "card-1");
   assert.equal(row.user_id, "user-1");
@@ -164,7 +160,7 @@ test("recordUsage stays quiet when there is nothing to record", async () => {
     await recordUsage(
       KANBAN,
       { repoName: "me/repo", repoPath: "/x", dir, sinceMs: Date.now() + 60000 },
-      stubGql([]),
+      stubApi([]),
     ),
     /no session transcript/,
   );

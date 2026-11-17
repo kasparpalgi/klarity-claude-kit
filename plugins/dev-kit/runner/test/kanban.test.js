@@ -1,12 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fakeApi, KANBAN } from "./fakeApi.js";
 import {
   cardIdOf,
   doneFile,
   finishedCards,
+  reconcileCards,
   resultsOf,
   stuckCards,
   titleOf,
@@ -138,4 +140,20 @@ test("a finished task whose card still points at its -TODO is stuck; a redo or a
   assert.deepEqual(stuckCards(todos, byCard, { todo: "TODO", doing: "Doing" }), [
     "034-manageGigs-DONE.md",
   ]);
+});
+
+test("reconcileCards looks up a card-less finished file by its -TODO path", async () => {
+  const repoPath = mkdtempSync(join(tmpdir(), "reconcile-"));
+  const dir = "doc/todo";
+  const full = join(repoPath, dir);
+  mkdirSync(full, { recursive: true });
+  writeFileSync(join(full, "007-x-DONE.md"), "# x\n\n## Results\n\nok\n");
+  const seen = fakeApi({
+    cards: () => [
+      { id: "c1", task_file_path: `${dir}/007-x-TODO.md`, list: { name: "Review" } },
+    ],
+  });
+  const kanban = { ...KANBAN, lists: { todo: "TODO", doing: "Doing" } };
+  assert.deepEqual(await reconcileCards(kanban, { repoName: "r", repoPath, dir }), []);
+  assert.deepEqual(seen, [["cards", { paths: [`${dir}/007-x-TODO.md`] }]]);
 });

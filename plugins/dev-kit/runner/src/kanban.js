@@ -230,7 +230,7 @@ export async function reconcileCards(kanban, { repoName, repoPath, dir }) {
     : [];
   // Cards the runner adopted for card-less files (claim.js) still point at the -TODO.
   if (byPath.size)
-    for (const t of (await cardsAt(kanban, ...byPath.keys())).todos) {
+    for (const t of await cardsAt(kanban, ...byPath.keys())) {
       if (byCard.has(t.id)) continue;
       byCard.set(t.id, byPath.get(t.task_file_path));
       todos.push(t);

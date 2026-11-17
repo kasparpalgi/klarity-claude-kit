@@ -8,6 +8,11 @@ const TOPIC = process.env.NTFY_TOPIC;
 const SERVER = (process.env.NTFY_SERVER || "https://ntfy.sh").replace(/\/$/, "");
 const TOKEN = process.env.NTFY_TOKEN;
 
+/** `--check` and the daemon say so: without a topic every "needs you" goes nowhere (#16). */
+export const notifyLine = TOPIC
+  ? `notify: ntfy → ${SERVER}`
+  : "notify: OFF — NTFY_TOPIC unset, no phone pings (⏸ needs you included)";
+
 /** HTTP headers are Latin-1; the JSON publish API takes the title as-is. */
 export async function notify(title, body) {
   if (!TOPIC) return;

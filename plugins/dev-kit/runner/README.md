@@ -301,8 +301,9 @@ cannot be found is a log line, not a failure. Needs `apiToken` in
 
 When a run starts the runner posts **one** comment on its card —
 `▶ Running on dell since 14:02 · Opus 5.5 / xhigh · attempt 1` — and edits that same
-comment (by id) as the run goes: `⏳ Waiting` at the usage wall, `⏸ Needs you` when the
-pane blocks, `✘ Failed` / `⚠ Did not finish`, and finally
+comment (by id) as the run goes: `⏳ Waiting` at the usage wall, `⏸ Needs you on dell since
+14:20 · … · answer in herdr tab task-035` when the pane blocks (the time is the block's, not
+the start's), `✘ Failed` / `⚠ Did not finish`, and finally
 `■ Finished on dell 14:02–14:41 · … · $2.33` with the cost from `sessionUsage.js`. A
 retry takes over the comment its unfinished attempt left; a `■ Finished` one is kept, so
 a card sent back for rework gets a fresh line. A task queued behind a blocked repo gets
@@ -711,7 +712,8 @@ moves too. Leave `handOver` off where the board pins someone's cards to that one
 [ntfy.sh](https://ntfy.sh), free. Set `NTFY_TOPIC` in the runner's environment to a
 hard-to-guess topic and subscribe to it in the ntfy phone app. Optional: `NTFY_SERVER`
 (self-hosted, default `https://ntfy.sh`) and `NTFY_TOKEN` (bearer token for a protected
-topic). No topic means every notification is a silent no-op. A failed push is logged as
+topic). No topic means every notification is a silent no-op, and the daemon's first lines and
+`--check` say `notify: OFF`. The card's `⏸ Needs you` line is then the only signal (#16). A failed push is logged as
 `notify failed: …` in the runner log. (Pushbullet was dropped: its API now answers
 `pushbullet_pro_required`.)
 

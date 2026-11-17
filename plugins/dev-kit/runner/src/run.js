@@ -21,7 +21,7 @@ import { usageLimitHit } from "./usage.js";
 import { aiderArgs, aiderFailed, excludeAiderFiles } from "./aider.js";
 import { herdrUp, paneLive, runInHerdr } from "./herdr.js";
 import { onList, unpush, watchCard } from "./leave.js";
-import { notify, tail } from "./notify.js";
+import { notify, notifyLine, tail } from "./notify.js";
 import { loadConfig, prFlow } from "./config.js";
 import {
   git,
@@ -202,8 +202,13 @@ async function runTask({
             return say("running", { url });
           }
         : null,
+      // Since the block, not the start, and where to answer: the card was the only
+      // signal on a machine with no ntfy topic, and "since 12:17" read as "never started" (#16).
       onBlocked: async (pane) => {
-        await say("needs");
+        await say("needs", {
+          startMs: Date.now(),
+          note: `answer in herdr tab task-${number}`,
+        });
         await notify(
           "Runner ⏸ needs you",
           `${repoName} ${filename}\n\n${tail(pane)}`,
@@ -1113,6 +1118,7 @@ async function check() {
     `herdr: ${cfg.useHerdr ? ((await herdrUp()) ? "up" : "ENABLED BUT DOWN") : "off"}`,
   );
   log(`machine: ${cfg.machine ?? "(unset — takes every task)"}`);
+  log(notifyLine);
   if (cfg.cloud) log("cloud: sends `> Machine: cloud` tasks to cloud sessions");
   const isMine = machineFilter(cfg);
   const cooldown = state.cooldownUntil();
@@ -1196,6 +1202,7 @@ if (process.argv.includes("--check")) {
   log(
     `watching ${Object.keys(cfg.repos).length} repo(s) every ${cfg.pollSeconds}s`,
   );
+  log(notifyLine);
   for (;;) {
     try {
       const next = loadConfig();

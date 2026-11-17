@@ -23,6 +23,17 @@ test("a running line names machine, start, tier and attempt", () => {
   );
 });
 
+test("a needs line says since the block and where to answer it (#16)", () => {
+  assert.equal(
+    statusLine("needs", {
+      ...run,
+      startMs: at(12, 22),
+      note: "answer in herdr tab task-035",
+    }),
+    "⏸ Needs you on dell since 12:22 · Opus 5.5 / xhigh · attempt 1 · answer in herdr tab task-035",
+  );
+});
+
 test("every kind of line carries the prefix the Kanban filters on", () => {
   for (const kind of [
     "running",

@@ -18,3 +18,5 @@ Make the round trip start an Auto task over as Auto. Either the runner releases 
 (`releaseCard`) when it sees the card leave the agent list (mid-run stop in `run.js`, and the sweep's
 card-left branch in `sweep.js`) and the file had no `> Machine:` line, or the Kanban's `unqueue`
 clears a claim that no person set. Pick one and test the round trip.
+
+_GitHub issue #20 — end the commit subject with `(#20)`._

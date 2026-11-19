@@ -305,6 +305,27 @@ async function announceWaiting(repoName, repoPath, dir, kind, reason) {
   }
 }
 
+/**
+ * Once per file version, on the card and in the log: a task waits on its `> After: #N`.
+ * Silence made ezyspace-landing's 020 look stuck while #19 sat open in the Backlog (#21).
+ * No ping: every runner that may take an Auto task would send one.
+ */
+async function announceAfter(repoName, task, n) {
+  const key = `${repoName}#${task.stem}@${task.mtime}#${n}`;
+  if (pinged.has(key)) return;
+  pinged.add(key);
+  const why = `waits for #${n} to close or merge (> After: #${n})`;
+  await openStatus(cfg.kanban, {
+    repoName,
+    todoId: cardIdOf(readFileSync(task.path, "utf8")),
+    machine: myName(cfg),
+    first: "waiting",
+    note: why,
+    log,
+  });
+  log(`  ${repoName}: ${task.name} ${why}`);
+}
+
 async function runRepo(repoName, repoPath) {
   const dir = todoDir(repoPath);
   await recordLeftAlone(repoName);
@@ -456,8 +477,12 @@ async function runRepo(repoName, repoPath) {
   for (const t of mine(pending, machineFilter(cfg))) {
     const held = theirs.get(`${repoName}#${t.stem}`);
     if (held?.mtime === t.mtime && Date.now() - held.at < THEIRS_MS) continue;
-    if (t.after.length && (await waiting(repoName, t).catch(() => t.after[0])))
+    const on =
+      t.after.length && (await waiting(repoName, t).catch(() => t.after[0]));
+    if (on) {
+      await announceAfter(repoName, t, on);
       continue;
+    }
     if (fixerOf(pending, t)) continue; // its fixer finishes it (#17)
     ready.push(t);
   }

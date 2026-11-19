@@ -594,7 +594,10 @@ A repo in `pullRequests` never gets code from the runner on its base branch:
    resolved threads never count. It is filed once per review round: not while one for that
    PR still waits to run, and not again for feedback a task already listed.
 5. **`> After: #78`** under the tier line holds a task until #78 is a merged PR or a closed
-   issue: a session starts from `main` and cannot see work that has not landed.
+   issue: a session starts from `main` and cannot see work that has not landed. While it
+   waits, its card says `⏳ Waiting on <machine> · waits for #78 to close or merge`, and the log
+   says so once per file version. A Backlog draft never closes on its own: finish it or drop
+   the line.
 
 Every session starts with `--settings ~/.kanban-runner/session.json`, which turns off
 Claude's commit and PR attribution lines; commits carry the machine's git identity.

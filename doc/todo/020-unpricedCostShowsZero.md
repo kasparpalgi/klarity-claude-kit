@@ -14,3 +14,5 @@ Filed by `019-unstick018`. The Kanban's price list has no row for `claude-opus-5
 When a run's model has no price, show the cost as unknown on the card (or leave it out) instead
 of 0, and keep `cost_usd` from claiming 0 in the `claude_usage` row. Also check that the pricing
 job picks up `claude-opus-5-5` once LiteLLM lists it.
+
+_GitHub issue #19 — end the commit subject with `(#19)`._

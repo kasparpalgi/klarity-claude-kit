@@ -75,14 +75,15 @@ export function watchCard({ check, pollMs, onLeft }) {
 /**
  * Turn commits the stopped agent made but never pushed back into staged changes,
  * so the stash takes them. Left as commits, the next tick's preflight pushes
- * them — the very finish the card's move was meant to cancel.
+ * them — the very finish the card's move was meant to cancel. Back to where the
+ * run forked from origin, not origin itself: the sweep sees origin after the card's
+ * own draft commit, which is never an ancestor of the run (#17).
  */
 export async function unpush(cwd, base) {
-  const up = `origin/${base}`;
   try {
-    await git(["merge-base", "--is-ancestor", up, "HEAD"], cwd);
-    await git(["reset", "-q", "--soft", up], cwd);
+    const { stdout } = await git(["merge-base", "HEAD", `origin/${base}`], cwd);
+    await git(["reset", "-q", "--soft", stdout.trim()], cwd);
   } catch {
-    // Diverged or no upstream: leave the commits to preflight's own handling.
+    // No upstream: leave the commits where they are.
   }
 }

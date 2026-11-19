@@ -203,6 +203,28 @@ test("the sweep lands a finished tree left behind, stashing its leftovers", asyn
   assert.match(run(repo, "stash", "list"), /091-always \(sweep\)/);
 });
 
+test("the sweep stashes a tree whose card left the list, landing nothing (#17)", async () => {
+  const { repo, kanban, run, tree, commit, tip } = setup();
+  const path = await tree();
+  commit(path, "app.js", "half\n");
+  writeFileSync(join(path, DIR, `${STEM}-TODO.md`), "# Always\n\n## Plan\n");
+  run(kanban, "pull", "-q", "origin", "main");
+  run(kanban, "mv", `${DIR}/${STEM}-TODO.md`, `${DIR}/${STEM}.md`);
+  run(kanban, "commit", "-qm", "back to draft");
+  run(kanban, "push", "-q", "origin", "HEAD:main");
+  const draft = tip();
+  run(repo, "pull", "-q", "origin", "main");
+
+  assert.match(
+    (await sweep(repo)).join(),
+    /removed the worktree of 091-always: its card left the agent list, its work stashed/,
+  );
+  assert.equal(tip(), draft, "main untouched");
+  assert.equal(existsSync(path), false);
+  assert.match(run(repo, "stash", "list"), /091-always \(card left\)/);
+  assert.match(run(repo, "stash", "show", "-p", "stash@{0}"), /\+half/);
+});
+
 test("the sweep leaves a tree whose task still waits, or whose pane still works", async () => {
   const { repo, run, tree } = setup();
   const path = await tree();

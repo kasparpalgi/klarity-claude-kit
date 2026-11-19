@@ -98,3 +98,16 @@ test("unpush turns unpushed commits into staged work for the stash", async () =>
   assert.equal(c("rev-parse", "HEAD"), c("rev-parse", "origin/main"));
   assert.match(c("status", "--porcelain"), /^A {2}work\.txt/m);
 });
+
+test("unpush stops at the fork when origin moved on meanwhile", async () => {
+  const { path, c, move } = setup();
+  const fork = c("rev-parse", "HEAD");
+  writeFileSync(join(path, "work.txt"), "half done\n");
+  c("add", "-A");
+  c("commit", "-qm", "agent commit");
+  move("042-x.md");
+  c("fetch", "-q", "origin");
+  await unpush(path, "main");
+  assert.equal(c("rev-parse", "HEAD"), fork);
+  assert.match(c("status", "--porcelain"), /^A {2}work\.txt/m);
+});

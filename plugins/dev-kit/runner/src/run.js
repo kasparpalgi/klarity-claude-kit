@@ -87,7 +87,7 @@ import { watchLink } from "./sessionLink.js";
 import { todoPrompt } from "./retry.js";
 import { costIn, openStatus } from "./status.js";
 import * as state from "./state.js";
-import { fileUnstick } from "./unstick.js";
+import { fileUnstick, fixerOf } from "./unstick.js";
 
 let cfg = loadConfig();
 const interactive = process.argv.includes("--interactive");
@@ -447,17 +447,25 @@ async function runRepo(repoName, repoPath) {
   }
   // Another machine's tasks stay in the list (they are still pending, and their
   // attempt counts are still ours to prune) but are never picked here — nor is one
-  // whose card another runner holds, nor one waiting on its `> After:` PR.
+  // whose card another runner holds, one waiting on its `> After:` PR, or one whose
+  // fixer is queued.
   const ready = [];
   for (const t of mine(pending, machineFilter(cfg))) {
     const held = theirs.get(`${repoName}#${t.stem}`);
     if (held?.mtime === t.mtime && Date.now() - held.at < THEIRS_MS) continue;
     if (t.after.length && (await waiting(repoName, t).catch(() => t.after[0])))
       continue;
+    if (fixerOf(pending, t)) continue; // its fixer finishes it (#17)
     ready.push(t);
   }
   const task = await pick(repoName, ready, async (t) => {
-    const line = await fileUnstick({ repoPath, dir, task: t, machine: me });
+    const line = await fileUnstick({
+      kanban: cfg.kanban,
+      repoPath,
+      dir,
+      task: t,
+      machine: me,
+    });
     if (line) log(`  ${repoName}: ${line}`);
     return line;
   });

@@ -1,13 +1,14 @@
 /**
  * Worktrees a run left behind (#91). A task's worktree normally goes when its run ends;
  * one stays while its pane still works, for the retry after a usage limit, or when its
- * work would not land. This puts away each one whose task is over — finished in the
- * tree or no longer queued, with no live pane — and the branches nothing uses any more.
+ * work would not land. This puts away each one whose task is over — finished, or its
+ * card out of the agent list, with no live pane — and the branches nothing uses any more.
  * Each worktree holds a full `node_modules`, so a forgotten one is hundreds of megabytes.
  */
 
 import { basename, join } from "node:path";
 import { landWorktree } from "./land.js";
+import { unpush } from "./leave.js";
 import { commitTaskDir, dirtyPaths, git, parkDirty } from "./repo.js";
 import { listPending, numberOf, retired } from "./queue.js";
 import { closeWorktree, onOrigin, root } from "./worktree.js";
@@ -51,6 +52,18 @@ export async function sweepWorktrees({ repoPath, dir, base, viaPr, live }) {
         await closeWorktree(repoPath, path);
         lines.push(`removed the worktree of ${stem}`);
       }
+      continue;
+    }
+    // Its card left the agent list (or went): the run was called off, not finished,
+    // so its work goes to a stash as when the card leaves mid-run (#17). Landed, a
+    // half run's notes said "done in 018" on ezyspace's main for work that never was.
+    if (!retired(path, dir, stem) && !retired(repoPath, dir, stem)) {
+      await unpush(path, base);
+      const parked = await parkDirty(path, `${stem} (card left)`);
+      await closeWorktree(repoPath, path);
+      lines.push(
+        `removed the worktree of ${stem}: its card left the agent list${parked ? ", its work stashed" : ""}`,
+      );
       continue;
     }
     await commitTaskDir(path, dir, `docs(todo): ${stem} bookkeeping (runner)`);

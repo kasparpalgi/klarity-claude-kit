@@ -48,3 +48,9 @@ dell's runner journal, `gh issue view 19` (open before, closed now) and `waiting
 shows up on the next held task.
 
 **Deviations** — Dropping 019 was the owner's call, made mid-run. It was not part of the card.
+
+**Addendum (20:40)** — Reversed on the owner's word: "19 shall run first". Issue #19 is reopened,
+and ezyspace-landing `3444f40` reverts the drop and queues `019-wireSmallCompetitors-TODO.md`
+(its card moved to TODO). By then mac had started 020 at 20:36. Its file went back to a draft
+and its card to Backlog, with mac's claim released, so mac stopped it at 20:40 and nothing
+landed. Move 020's card back to TODO once 019 lands. 022 still waits on #19, #20 and #21.

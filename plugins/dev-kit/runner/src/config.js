@@ -21,6 +21,15 @@ export const kanbanOf = (file) => ({
   appUrl: file.appUrl ?? "https://www.todzz.eu",
 });
 
+/**
+ * `--check` and the daemon say so. Windows had no token after #246 dropped Hasura, so it
+ * claimed an Auto task with a pushed line while karel claimed the card: both ran it (#19).
+ */
+export const kanbanLine = ({ apiToken, appUrl }) =>
+  apiToken
+    ? `kanban: ${appUrl}`
+    : "kanban: OFF — no apiToken: cards never move, and an Auto task is claimed by a pushed line that runners with a token never see, so two machines can run it";
+
 export function loadConfig(
   path = process.env.KANBAN_RUNNER_CONFIG ?? DEFAULT_PATH,
 ) {

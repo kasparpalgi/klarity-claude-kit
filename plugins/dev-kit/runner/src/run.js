@@ -17,12 +17,12 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { classify, explicitTier } from "./classify.js";
-import { usageLimitHit } from "./usage.js";
+import { lastApiError, usageLimitHit } from "./usage.js";
 import { aiderArgs, aiderFailed, excludeAiderFiles } from "./aider.js";
 import { herdrUp, paneLive, runInHerdr } from "./herdr.js";
 import { onList, unpush, watchCard } from "./leave.js";
 import { notify, notifyLine, tail } from "./notify.js";
-import { loadConfig, prFlow } from "./config.js";
+import { kanbanLine, loadConfig, prFlow } from "./config.js";
 import {
   git,
   ignoreLogs,
@@ -82,7 +82,7 @@ import { offboard } from "./offboard.js";
 import { selfUpdate } from "./selfUpdate.js";
 import { syncSecrets } from "./secrets.js";
 import { trustProject } from "./trust.js";
-import { projectDir, recordUsage } from "./sessionUsage.js";
+import { findSessionFile, projectDir, recordUsage } from "./sessionUsage.js";
 import { watchLink } from "./sessionLink.js";
 import { todoPrompt } from "./retry.js";
 import { costIn, openStatus } from "./status.js";
@@ -600,7 +600,10 @@ async function runRepo(repoName, repoPath) {
   // wall within seconds: server 026 burned three panes on it, tekdok 466 five,
   // and the fifth stalled herdr. Stop every repo until the reset instead.
   // Gemini via aider is not on the Claude budget; its output is not the CLI's.
-  const limit = tier.engine || stopped ? null : usageLimitHit(output);
+  // The transcript too: the pane can miss the wall that ended the session (#19).
+  const apiError = lastApiError(findSessionFile(projectDir(cwd), runStartMs));
+  const limit =
+    tier.engine || stopped ? null : usageLimitHit(`${output}\n${apiError}`);
   if (limit) {
     state.setCooldown(limit.untilMs);
     // Hitting the usage wall is the account's state, not this task's fault —
@@ -761,9 +764,13 @@ async function runRepo(repoName, repoPath) {
   if (code !== 0) {
     // "exit 1" over a two-line herdr error reads as "the agent failed"; it did
     // not run at all, which is a different thing to go and look at.
-    const why = started
-      ? `exit ${code}`
-      : "the agent never started in its pane";
+    // The API error it ended on says why on the card, without the Mac's log (#19).
+    const why = [
+      started ? `exit ${code}` : "the agent never started in its pane",
+      apiError && `API error: ${apiError.slice(0, 120)}`,
+    ]
+      .filter(Boolean)
+      .join(" — ");
     log(`✘ ${filename} ${why}${parked ? " — parked leftover work" : ""}`);
     ended(why, parked);
     await say("failed", { costUsd, note: why });
@@ -1119,6 +1126,7 @@ async function check() {
   );
   log(`machine: ${cfg.machine ?? "(unset — takes every task)"}`);
   log(notifyLine);
+  log(kanbanLine(cfg.kanban));
   if (cfg.cloud) log("cloud: sends `> Machine: cloud` tasks to cloud sessions");
   const isMine = machineFilter(cfg);
   const cooldown = state.cooldownUntil();
@@ -1203,6 +1211,7 @@ if (process.argv.includes("--check")) {
     `watching ${Object.keys(cfg.repos).length} repo(s) every ${cfg.pollSeconds}s`,
   );
   log(notifyLine);
+  log(kanbanLine(cfg.kanban));
   for (;;) {
     try {
       const next = loadConfig();

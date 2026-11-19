@@ -6,6 +6,8 @@
  * falls back to a conservative fixed wait.
  */
 
+import { readFileSync } from "node:fs";
+
 const SESSION_HOURS = 5;
 const WEEKLY_DAYS = 7;
 
@@ -100,4 +102,30 @@ export function usageLimitHit(output, now = Date.now()) {
   if (SESSION.test(output))
     return { untilMs: now + SESSION_HOURS * HOUR, scope: "session" };
   return null;
+}
+
+/**
+ * The API error a session ended on, from its transcript: Claude Code writes the wall
+ * there as an `isApiErrorMessage` turn, `You've hit your 5-hour limit · resets 4:20pm
+ * (Europe/Tallinn)`. The pane can miss it: the Mac's two runs of 018 ended on an API
+ * error after eight seconds each, no limit was read off the pane, and both counted as
+ * failed attempts (klarity-claude-kit#19). "" when the session ended on a real answer.
+ */
+export function lastApiError(file) {
+  let last;
+  try {
+    for (const line of readFileSync(file, "utf8").split("\n")) {
+      try {
+        const e = JSON.parse(line);
+        if (e.type === "assistant" && !e.isSidechain) last = e;
+      } catch {}
+    }
+  } catch {
+    return "";
+  }
+  if (!last?.isApiErrorMessage) return "";
+  return (last.message?.content ?? [])
+    .map((c) => c.text ?? "")
+    .join(" ")
+    .trim();
 }

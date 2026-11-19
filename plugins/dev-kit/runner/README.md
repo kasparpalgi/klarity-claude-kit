@@ -506,6 +506,12 @@ on the repo's board) the claim is a pushed `chore(todo): claim NNN for karel` co
 adds the `> Machine:` line, as before tektok-app's task 184: a push is atomic, and it
 touches only the task file, which is bookkeeping even in a pull request repo.
 
+**Every runner needs `apiToken`, or two of them run the same task** (#19). The two locks do
+not see each other: windows, with no token after the move off Hasura, pushed
+`claim 018 for windows` in the same second that karel won the card, and both ran ezyspace's
+018 on one account. A runner without a token says `kanban: OFF — no apiToken …` when it starts
+and in `--check`.
+
 `machine` also accepts a list (`["karel", "karel-ubuntu"]`) so a board label spelled
 differently than the config still lands. A task addressed to a name **no** runner
 answers to is not an error anywhere — it simply never runs. `--check` is where you
@@ -672,8 +678,16 @@ started with almost no budget left doesn't count toward the 3-strikes skip. The 
 and the `Runner ⏳ usage limit` notification show that moment in the machine's local time,
 with its zone (`08/11/2026, 00:11 EET`).
 
+The pane is not the only place the wall shows. Claude Code also writes it into the session
+transcript, as the API error the session ended on (`src/usage.js` `lastApiError`), and the
+runner reads it there too. The Mac's two runs of 018 ended on an API error after eight seconds
+each. No limit was read off the pane, so both counted as failures and the task was parked as stuck
+(#19). Any other API error a run ends on goes onto the card's `✘` line.
+
 **The wall is one machine's, so its queue moves on** (klarity-claude-kit#12). Each machine
-bills its own account: while the Mac waits out its reset, dell and karel are free. With
+bills its own account, if it has one of its own: while the Mac waits out its reset, dell is
+free. karel and windows share one account, with one reset, so handing work between them gains
+nothing. With
 `"handOver": true`, every tick of the wait still preflights each repo, but only to give this
 machine's waiting tasks back to Auto (`src/handover.js`): the card's machine is cleared, and a
 bare `> Machine: mac` line goes from the file in one pushed

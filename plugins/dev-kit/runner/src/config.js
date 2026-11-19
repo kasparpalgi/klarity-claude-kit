@@ -46,6 +46,9 @@ export function loadConfig(
     // Also show the herdr pane in claude.ai/code and the Claude app (#85). The
     // session lands in the account this machine is logged in to, hence opt-in.
     remoteControl: file.remoteControl ?? false,
+    // Start every session with `claude --chrome`, so /todo can drive the paired Chrome (Claude in
+    // Chrome). On by default: without a connected browser the tools just say so.
+    chrome: file.chrome ?? true,
     // Send `> Machine: cloud` tasks to Claude Code cloud sessions (#86). They run on
     // this machine's account, so set it on one runner only: two would both send them.
     cloud: file.cloud ?? false,

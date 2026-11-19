@@ -171,3 +171,11 @@ test("the daemon sweeps for new boards every 5 minutes unless told otherwise", (
   writeFileSync(off, JSON.stringify({ repos: { "a/b": "/tmp/b" }, onboardMinutes: 0 }));
   assert.equal(loadConfig(off).onboardMinutes, 0);
 });
+
+test("every session starts with Claude in Chrome unless a machine opts out", () => {
+  const { path } = fixture([], { repos: { "a/b": "/tmp/b" } });
+  assert.equal(loadConfig(path).chrome, true);
+  const off = join(mkdtempSync(join(tmpdir(), "cfg-")), "config.json");
+  writeFileSync(off, JSON.stringify({ repos: { "a/b": "/tmp/b" }, chrome: false }));
+  assert.equal(loadConfig(off).chrome, false);
+});

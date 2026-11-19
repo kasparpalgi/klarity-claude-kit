@@ -422,6 +422,7 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 | `repos`          | `"owner/repo"` → local clone path; `~/` is expanded at runtime  |
 | `useHerdr`       | run Claude in a herdr pane, visible on the phone (default false) |
 | `unattended`     | on the herdr path, skip permissions instead of asking (true here) |
+| `chrome`         | start every session with `claude --chrome` so it can drive the paired Chrome (default true). A session only gets the browser tools it started with |
 | `remoteControl`  | on the herdr path, also open the session in claude.ai/code and the Claude app (default false). See *Remote Control* below |
 | `cloud`          | send `> Machine: cloud` tasks to Claude Code cloud sessions (default false). One runner only, on the account the sessions should bill. See *Cloud* below |
 | `handOver`       | at the usage wall, put this machine's waiting tasks back on Auto for a free runner (default false). See *Usage limits* |

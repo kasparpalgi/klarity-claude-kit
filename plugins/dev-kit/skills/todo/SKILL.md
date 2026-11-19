@@ -77,6 +77,14 @@ it gets its own fresh Backlog card, so copying the parent's card id would misfil
 - Golden rule: **simplicity is GENIUS.** Files ~100 lines, 200 max.
 - Research before writing unfamiliar API code — see the `research-first` skill.
 - Follow the project's own conventions skills (they auto-load from `paths`).
+- **A step in a web UI** (a cloud console, a dashboard, a store page) is yours, not a human
+  step: do it in the user's Chrome with Claude in Chrome (read the `chrome-browser` skill first).
+  The user is already signed in there; ask only for a password or a payment. If the
+  `mcp__claude-in-chrome__*` tools are missing (the session started before the extension
+  connected), run that step in a fresh session, which picks the browser up:
+  `claude -p --chrome --allowedTools "mcp__claude-in-chrome__*" Read ToolSearch < steps.txt`
+  with numbered steps and the exact values to report back. Only if it says no browser is
+  connected does it go into the human todo.
 
 ## 4. Simplify pass
 

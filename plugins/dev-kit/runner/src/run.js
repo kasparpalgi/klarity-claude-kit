@@ -175,6 +175,9 @@ async function runTask({
     tier.effort,
     "--settings",
     SESSION_SETTINGS,
+    // Claude in Chrome from the first turn, in every repo (ezysmart-web 074): a session only
+    // gets the browser tools it was started with, so reconnecting the extension later is too late.
+    ...(cfg.chrome ? ["--chrome"] : []),
   ];
   // Before the pane, not at clone time: a repo added to config.json by hand, or
   // cloned by the peer, never passed through onboarding.

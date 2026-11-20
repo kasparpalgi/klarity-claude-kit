@@ -28,7 +28,7 @@ export const kanbanOf = (file) => ({
 export const kanbanLine = ({ apiToken, appUrl }) =>
   apiToken
     ? `kanban: ${appUrl}`
-    : "kanban: OFF — no apiToken: cards never move, and an Auto task is claimed by a pushed line that runners with a token never see, so two machines can run it";
+    : "kanban: OFF — no apiToken: cards never move, and Auto tasks are left to the runners that have one (#24)";
 
 export function loadConfig(
   path = process.env.KANBAN_RUNNER_CONFIG ?? DEFAULT_PATH,

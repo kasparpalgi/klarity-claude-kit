@@ -126,6 +126,14 @@ async function cardClaim(kanban, { repoName, dir, task, me }) {
 }
 
 /** true when this runner now owns the task, false when another one does. */
+/**
+ * Whether this runner may claim an Auto task at all. Without a token it cannot take a
+ * card's lock, and the line it would push is one the runners with a token never read:
+ * windows ran tektok-app's 548 beside dell that way, after #19 only warned (#24). Such a
+ * runner takes only the tasks that name it. One with no name is the only runner there is.
+ */
+export const claimsAuto = (kanban, me) => !me || hasKanban(kanban);
+
 export async function claim(kanban, { repoPath, repoName, dir, task, me }) {
   const won = hasKanban(kanban)
     ? await cardClaim(kanban, { repoName, dir, task, me })

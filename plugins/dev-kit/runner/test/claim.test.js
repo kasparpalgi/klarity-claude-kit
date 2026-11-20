@@ -201,3 +201,11 @@ test("with no Kanban the pushed `> Machine:` line is the lock, as before", async
     /^> Machine: dell$/m,
   );
 });
+
+test("a named runner without a token claims no Auto task; with one, or alone, it may (#24)", async () => {
+  const { claimsAuto } = await import("../src/claim.js");
+  assert.equal(claimsAuto({}, "windows"), false);
+  assert.equal(claimsAuto({ apiToken: "" }, "windows"), false);
+  assert.equal(claimsAuto({ apiToken: "t" }, "windows"), true);
+  assert.equal(claimsAuto({}, null), true);
+});

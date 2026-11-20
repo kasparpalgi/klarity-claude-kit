@@ -518,11 +518,12 @@ Backlog and back to start it over, addressing it to a runner that may be offline
 file that had a `> Machine:` line keeps it: a person chose that machine. A card that leaves
 while this runner holds neither a run nor a worktree for it still keeps its claim.
 
-**Every runner needs `apiToken`, or two of them run the same task** (#19). The two locks do
-not see each other: windows, with no token after the move off Hasura, pushed
-`claim 018 for windows` in the same second that karel won the card, and both ran ezyspace's
-018 on one account. A runner without a token says `kanban: OFF — no apiToken …` when it starts
-and in `--check`.
+**Every runner needs `apiToken`** (#19). The two locks do not see each other: windows, with no
+token after the move off Hasura, pushed `claim 018 for windows` in the same second that karel
+won the card, and both ran ezyspace's 018 on one account; it happened again with tektok-app's
+548. Since #24 a named runner without a token claims no Auto task: it runs only the tasks that
+name it and logs `skip … is Auto, and without an apiToken …` once per task. It says
+`kanban: OFF — no apiToken …` when it starts and in `--check`.
 
 `machine` also accepts a list (`["karel", "karel-ubuntu"]`) so a board label spelled
 differently than the config still lands. A task addressed to a name **no** runner

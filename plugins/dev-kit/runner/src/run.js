@@ -53,7 +53,7 @@ import {
 import { cloudTick } from "./cloudTick.js";
 import { waitingOnOrigin } from "./waiting.js";
 import { feedback, sweepRework } from "./rework.js";
-import { claim, unclaim } from "./claim.js";
+import { claim, claimsAuto, unclaim } from "./claim.js";
 import { handOver } from "./handover.js";
 import { issueOf } from "./issue.js";
 import { cardIdOf, closeLoop, reconcileCards, titleOf } from "./kanban.js";
@@ -260,6 +260,9 @@ async function reconcile(repoName, repoPath, dir) {
  */
 const theirs = new Map();
 const THEIRS_MS = 10 * 60000;
+
+/** `repo#stem` of the Auto tasks a runner without a token has said it leaves (#24). */
+const leftAuto = new Set();
 
 /**
  * `repo#stem` → a session left running in its pane (#60). Its transcript stops
@@ -477,6 +480,15 @@ async function runRepo(repoName, repoPath) {
   // fixer is queued.
   const ready = [];
   for (const t of mine(pending, machineFilter(cfg))) {
+    if (!t.machine && !claimsAuto(cfg.kanban, me)) {
+      const key = `${repoName}#${t.stem}`;
+      if (!leftAuto.has(key))
+        log(
+          `skip ${repoName} — ${t.name} is Auto, and without an apiToken this runner takes only tasks that name it (#24)`,
+        );
+      leftAuto.add(key);
+      continue;
+    }
     const held = theirs.get(`${repoName}#${t.stem}`);
     if (held?.mtime === t.mtime && Date.now() - held.at < THEIRS_MS) continue;
     const on =

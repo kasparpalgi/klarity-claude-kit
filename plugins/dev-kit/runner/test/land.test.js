@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { KANBAN, fakeApi } from "./fakeApi.js";
 import { catchUp, landWorktree } from "../src/land.js";
 import { preflight } from "../src/repo.js";
 import { sweepWorktrees } from "../src/sweep.js";
@@ -207,7 +208,10 @@ test("the sweep stashes a tree whose card left the list, landing nothing (#17)",
   const { repo, kanban, run, tree, commit, tip } = setup();
   const path = await tree();
   commit(path, "app.js", "half\n");
-  writeFileSync(join(path, DIR, `${STEM}-TODO.md`), "# Always\n\n## Plan\n");
+  const card = "aaaaaaaa-1111-2222-3333-444455556666";
+  const from = `# Always\n\n_From Kanban card \`${card}\`._\n\n## Plan\n`;
+  writeFileSync(join(path, DIR, `${STEM}-TODO.md`), from);
+  const seen = fakeApi({ releaseCard: () => ({ released: true }) });
   run(kanban, "pull", "-q", "origin", "main");
   run(kanban, "mv", `${DIR}/${STEM}-TODO.md`, `${DIR}/${STEM}.md`);
   run(kanban, "commit", "-qm", "back to draft");
@@ -216,9 +220,10 @@ test("the sweep stashes a tree whose card left the list, landing nothing (#17)",
   run(repo, "pull", "-q", "origin", "main");
 
   assert.match(
-    (await sweep(repo)).join(),
-    /removed the worktree of 091-always: its card left the agent list, its work stashed/,
+    (await sweep(repo, { kanban: KANBAN, me: "mac" })).join(),
+    /removed the worktree of 091-always: its card left the agent list, its work stashed, its card back on Auto/,
   );
+  assert.deepEqual(seen, [["releaseCard", { id: card, machine: "mac" }]]);
   assert.equal(tip(), draft, "main untouched");
   assert.equal(existsSync(path), false);
   assert.match(run(repo, "stash", "list"), /091-always \(card left\)/);

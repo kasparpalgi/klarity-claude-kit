@@ -53,7 +53,7 @@ import {
 import { cloudTick } from "./cloudTick.js";
 import { waitingOnOrigin } from "./waiting.js";
 import { feedback, sweepRework } from "./rework.js";
-import { claim } from "./claim.js";
+import { claim, unclaim } from "./claim.js";
 import { handOver } from "./handover.js";
 import { issueOf } from "./issue.js";
 import { cardIdOf, closeLoop, reconcileCards, titleOf } from "./kanban.js";
@@ -353,6 +353,8 @@ async function runRepo(repoName, repoPath) {
   const viaPr = prFlow(cfg, repoName);
   const base = await baseBranch(repoPath);
   const swept = await sweepWorktrees({
+    kanban: cfg.kanban,
+    me: myName(cfg),
     repoPath,
     dir,
     base,
@@ -717,6 +719,8 @@ async function runRepo(repoName, repoPath) {
     if (!viaPr) await unpush(cwd, base);
     const sha = await park();
     await closeWorktree(repoPath, cwd);
+    if (await unclaim(cfg.kanban, content, me))
+      log(`  ${filename} — its card is back on Auto`);
     await say("unfinished", { costUsd, note: "card left the agent list" });
     await notify(
       "Runner ⏹ stopped — card left the agent list",

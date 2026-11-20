@@ -26,6 +26,7 @@ import {
   runnerApi,
   titleOf,
 } from "./kanban.js";
+import { machineOf } from "./machine.js";
 import { git } from "./repo.js";
 
 /** The card already filed for `path`, the oldest when a race left two. */
@@ -93,6 +94,16 @@ const swap = async (kanban, id, me) =>
 /** The card back on Auto, if `me` holds it: true when it did (handover.js). */
 export const release = async (kanban, id, me) =>
   (await runnerApi(kanban, "releaseCard", { id, machine: me })).released;
+
+/**
+ * A card that left the agent list goes back on Auto when only this runner's claim
+ * pinned it: `text` is the task file the run started from, and no `> Machine:` line
+ * there means no person chose one. Left set, moving the card to Backlog and back wrote
+ * `> Machine: <this runner>` into the new file, even with this runner offline (#20).
+ */
+export const unclaim = async (kanban, text, me) =>
+  Boolean(me && hasKanban(kanban) && cardIdOf(text) && !machineOf(text)) &&
+  (await release(kanban, cardIdOf(text), me).catch(() => false));
 
 /** true or false as the board decides; null when there is no card to lock with. */
 async function cardClaim(kanban, { repoName, dir, task, me }) {

@@ -6,7 +6,9 @@
  * Each worktree holds a full `node_modules`, so a forgotten one is hundreds of megabytes.
  */
 
+import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { unclaim } from "./claim.js";
 import { landWorktree } from "./land.js";
 import { unpush } from "./leave.js";
 import { commitTaskDir, dirtyPaths, git, parkDirty } from "./repo.js";
@@ -23,6 +25,15 @@ export async function runnerTrees(repoPath) {
     .filter((p) => p?.startsWith(mine));
 }
 
+/** The task file a tree's run started from, or "" when it is gone. */
+const startedFrom = (path, dir, stem) => {
+  try {
+    return readFileSync(join(path, dir, `${stem}-TODO.md`), "utf8");
+  } catch {
+    return "";
+  }
+};
+
 /** Branches swept once per process: after that, closing a tree drops its own. */
 const swept = new Set();
 /** Path → why its work would not land, said once rather than every tick. */
@@ -34,9 +45,17 @@ const kept = new Map();
  * queued, so the caller looks again next tick rather than run one twice. A pull
  * request repo's tree only goes when it is clean and all on origin; a push-to-main
  * repo's work is parked or landed first, so nothing is ever lost; the clone catches up
- * at the next preflight.
+ * at the next preflight. A tree whose card left gives back the claim `me` made on it.
  */
-export async function sweepWorktrees({ repoPath, dir, base, viaPr, live }) {
+export async function sweepWorktrees({
+  kanban,
+  me,
+  repoPath,
+  dir,
+  base,
+  viaPr,
+  live,
+}) {
   const lines = [];
   let landed = 0;
   await git(["worktree", "prune"], repoPath);
@@ -45,24 +64,28 @@ export async function sweepWorktrees({ repoPath, dir, base, viaPr, live }) {
     const stem = basename(path);
     if (pending.has(stem) && !retired(path, dir, stem)) continue;
     if (await live(`task-${numberOf(stem)}`)) continue;
+    const left = !retired(path, dir, stem) && !retired(repoPath, dir, stem);
+    const text = left ? startedFrom(path, dir, stem) : "";
+    const auto = async () =>
+      (await unclaim(kanban, text, me)) ? ", its card back on Auto" : "";
     if (viaPr) {
       const lost =
         (await dirtyPaths(path)).length || !(await onOrigin("HEAD", path));
       if (!lost) {
         await closeWorktree(repoPath, path);
-        lines.push(`removed the worktree of ${stem}`);
+        lines.push(`removed the worktree of ${stem}${await auto()}`);
       }
       continue;
     }
     // Its card left the agent list (or went): the run was called off, not finished,
     // so its work goes to a stash as when the card leaves mid-run (#17). Landed, a
     // half run's notes said "done in 018" on ezyspace's main for work that never was.
-    if (!retired(path, dir, stem) && !retired(repoPath, dir, stem)) {
+    if (left) {
       await unpush(path, base);
       const parked = await parkDirty(path, `${stem} (card left)`);
       await closeWorktree(repoPath, path);
       lines.push(
-        `removed the worktree of ${stem}: its card left the agent list${parked ? ", its work stashed" : ""}`,
+        `removed the worktree of ${stem}: its card left the agent list${parked ? ", its work stashed" : ""}${await auto()}`,
       );
       continue;
     }

@@ -15,8 +15,11 @@ export const LITELLM_URL =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 
 const PER_MTOK = 1_000_000;
+// Rounded: 2e-7 * 1e6 is 0.19999999999999998 in floating point, not 0.2.
 const mtok = (perToken) =>
-  typeof perToken === "number" ? perToken * PER_MTOK : null;
+  typeof perToken === "number"
+    ? Math.round(perToken * PER_MTOK * 1e6) / 1e6
+    : null;
 
 /** Is this a Claude chat model with real input/output pricing? */
 function isClaudeChat(key, v) {

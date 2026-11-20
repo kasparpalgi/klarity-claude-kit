@@ -292,9 +292,12 @@ row (`src/sessionUsage.js`): tokens per model, API-list cost from
 `session_id`, so re-ingesting a transcript refreshes it instead of double-counting.
 The log line reads `usage: claude-opus-5 2271895 in / 29536 out → $2.3296`.
 
-Two things it deliberately tolerates: a model with no price row yet (LiteLLM lags a
-brand-new id by days) costs 0 and is named in the log, and a run whose transcript
-cannot be found is a log line, not a failure. Needs `apiToken` in
+Two things it deliberately tolerates: a model with no price row yet, and a run whose
+transcript cannot be found — each is a log line, not a failure. A missing price first
+pulls LiteLLM's list on the spot and upserts it, so a new model rarely waits for the
+pricing job. If LiteLLM lacks it too, the log and the card's status line say
+`cost unknown` instead of a `$0.00` that reads as free. The `claude_usage` row keeps
+only the priced part, because its `cost_usd` column is `NOT NULL`. Needs `apiToken` in
 `config.json`; without them the runner skips this entirely.
 
 ### Live status on the card
@@ -644,7 +647,7 @@ the judge (it runs through aider), so naming it falls back to the default.
 **Is the tier worth it?** `npm run tiers -- --days 30` prints one row per model / effort
 from the `claude_usage` rows every run records: sessions, cards, sessions per card (above
 1 means retries), median minutes and output tokens, and cost. Effort is the card's;
-`auto` means the card left it unset. Cost reads 0 for a model LiteLLM has not priced yet.
+`auto` means the card left it unset. Cost undercounts a model nobody had priced when it ran.
 
 Task-014 writes the line from the card's model/effort fields, so the tier is normally
 chosen from the board rather than typed.

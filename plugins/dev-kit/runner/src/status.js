@@ -46,7 +46,11 @@ export function statusLine(
     `${KINDS[kind]} on ${machine} ${span}`,
     tier,
     attempt ? `attempt ${attempt}` : null,
-    costUsd != null ? `$${costUsd.toFixed(2)}` : null,
+    costUsd == null
+      ? null
+      : Number.isNaN(costUsd)
+        ? "cost unknown"
+        : `$${costUsd.toFixed(2)}`,
     note,
     url,
   ]
@@ -54,8 +58,12 @@ export function statusLine(
     .join(" · ");
 }
 
-/** `usage: … → $2.3312` (recordUsage's log line) → 2.3312, else null. */
+/**
+ * `usage: … → $2.3312` (recordUsage's log line) → 2.3312; `→ cost unknown` → NaN,
+ * shown as "cost unknown" — a $0.00 would read as "nothing was spent".
+ */
 export const costIn = (line) => {
+  if (/→ cost unknown/.test(line ?? "")) return NaN;
   const m = /→ \$(\d+(?:\.\d+)?)/.exec(line ?? "");
   return m ? Number(m[1]) : null;
 };

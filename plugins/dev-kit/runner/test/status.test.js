@@ -53,6 +53,19 @@ test("reads the cost out of recordUsage's log line", () => {
     2.3312,
   );
   assert.equal(costIn("usage: no session transcript for this run"), null);
+  const unknown = costIn(
+    "usage: x 1 in / 1 out → cost unknown (no price for x; priced part $0.0000)",
+  );
+  assert.ok(Number.isNaN(unknown));
+  assert.match(
+    statusLine("finished", {
+      ...run,
+      startMs: at(9, 0),
+      endMs: at(9, 20),
+      costUsd: unknown,
+    }),
+    / · cost unknown$/,
+  );
   assert.equal(costIn(null), null);
 });
 
@@ -161,9 +174,16 @@ test("a Kanban error is a log line, not a failed run", async () => {
 
 test("the Remote Control link, once known, stays on every later line (#85)", async () => {
   const { kanban, comments } = fakeKanban();
-  const say = await openStatus(kanban, { ...run, repoName: "o/r", todoId: CARD });
+  const say = await openStatus(kanban, {
+    ...run,
+    repoName: "o/r",
+    todoId: CARD,
+  });
   const url = "https://claude.ai/code/session_01ABC";
   await say("running", { url });
   await say("finished", { costUsd: 1.5 });
-  assert.match(comments[0].content, /^■ Finished .* · \$1\.50 · https:\/\/claude\.ai\/code\/session_01ABC$/);
+  assert.match(
+    comments[0].content,
+    /^■ Finished .* · \$1\.50 · https:\/\/claude\.ai\/code\/session_01ABC$/,
+  );
 });

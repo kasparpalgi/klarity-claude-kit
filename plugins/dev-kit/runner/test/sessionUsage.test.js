@@ -55,18 +55,36 @@ test("sumUsage dedupes a reply repeated per content block", () => {
   const line = assistant("msg_1", "claude-opus-4-8", use(2, 100, 500, 40));
   const { byModel } = sumUsage([line, line, line]);
   assert.deepEqual(byModel, {
-    "claude-opus-4-8": { input: 2, output: 100, cacheRead: 500, cacheWrite: 40 },
+    "claude-opus-4-8": {
+      input: 2,
+      output: 100,
+      cacheRead: 500,
+      cacheWrite: 40,
+    },
   });
 });
 
 test("sumUsage groups a model switch and brackets the run", () => {
   const { byModel, startedAt, endedAt } = sumUsage([
-    assistant("a", "claude-opus-4-8", use(1, 10, 100, 5), "2026-09-17T10:00:00Z"),
-    assistant("b", "claude-sonnet-5", use(3, 30, 300, 15), "2026-09-17T10:05:00Z"),
+    assistant(
+      "a",
+      "claude-opus-4-8",
+      use(1, 10, 100, 5),
+      "2026-09-17T10:00:00Z",
+    ),
+    assistant(
+      "b",
+      "claude-sonnet-5",
+      use(3, 30, 300, 15),
+      "2026-09-17T10:05:00Z",
+    ),
     "not json at all",
     JSON.stringify({ type: "user", timestamp: "2026-09-17T10:09:00Z" }),
   ]);
-  assert.deepEqual(Object.keys(byModel), ["claude-opus-4-8", "claude-sonnet-5"]);
+  assert.deepEqual(Object.keys(byModel), [
+    "claude-opus-4-8",
+    "claude-sonnet-5",
+  ]);
   assert.equal(startedAt, "2026-09-17T10:00:00Z");
   assert.equal(endedAt, "2026-09-17T10:09:00Z");
   assert.deepEqual(totalsOf(byModel), {
@@ -130,15 +148,31 @@ test("recordUsage upserts one row for the session", async () => {
   writeFileSync(
     join(dir, "sess-abc.jsonl"),
     [
-      assistant("a", "claude-opus-4-8", use(0, 1e6, 0, 0), "2026-09-17T10:00:00Z"),
-      assistant("a", "claude-opus-4-8", use(0, 1e6, 0, 0), "2026-09-17T10:00:00Z"),
+      assistant(
+        "a",
+        "claude-opus-4-8",
+        use(0, 1e6, 0, 0),
+        "2026-09-17T10:00:00Z",
+      ),
+      assistant(
+        "a",
+        "claude-opus-4-8",
+        use(0, 1e6, 0, 0),
+        "2026-09-17T10:00:00Z",
+      ),
     ].join("\n"),
   );
   const sent = [];
   // The real call derives the dir from repoPath; point it at the fixture instead.
   const line = await recordUsage(
     KANBAN,
-    { repoName: "me/repo", repoPath: "/x", todoId: "card-1", sinceMs: since, dir },
+    {
+      repoName: "me/repo",
+      repoPath: "/x",
+      todoId: "card-1",
+      sinceMs: since,
+      dir,
+    },
     stubApi(sent),
   );
   assert.match(line, /claude-opus-4-8/);
@@ -155,7 +189,10 @@ test("recordUsage upserts one row for the session", async () => {
 
 test("recordUsage stays quiet when there is nothing to record", async () => {
   const dir = mkdtempSync(join(tmpdir(), "empty-"));
-  assert.equal(await recordUsage({}, { repoPath: "/x", dir, sinceMs: 0 }), null);
+  assert.equal(
+    await recordUsage({}, { repoPath: "/x", dir, sinceMs: 0 }),
+    null,
+  );
   assert.match(
     await recordUsage(
       KANBAN,
@@ -163,5 +200,52 @@ test("recordUsage stays quiet when there is nothing to record", async () => {
       stubApi([]),
     ),
     /no session transcript/,
+  );
+});
+
+/** A fixture transcript with one unpriced Opus 5.5 reply; returns its dir. */
+function unpricedSession() {
+  const dir = mkdtempSync(join(tmpdir(), "unpriced-"));
+  writeFileSync(
+    join(dir, "sess-new.jsonl"),
+    assistant("a", "claude-opus-5-5", use(0, 1e6, 0, 0)),
+  );
+  return dir;
+}
+const OPUS55 = {
+  model: "claude-opus-5-5",
+  input_per_mtok: 4,
+  output_per_mtok: 20,
+  cache_read_per_mtok: 0.2,
+  cache_write_per_mtok: 5,
+};
+
+test("recordUsage fetches a price the Kanban lacks and shares it (#19)", async () => {
+  const sent = [];
+  const line = await recordUsage(
+    KANBAN,
+    { repoName: "me/repo", repoPath: "/x", dir: unpricedSession(), sinceMs: 0 },
+    stubApi(sent),
+    async () => [OPUS55],
+  );
+  assert.match(line, /→ \$20\.0000$/);
+  assert.deepEqual(sent.find((s) => s.op === "upsertPricing").input.rows, [
+    OPUS55,
+  ]);
+  assert.equal(sent.at(-1).input.row.cost_usd, 20);
+});
+
+test("recordUsage calls a still-unpriced run's cost unknown, not $0 (#19)", async () => {
+  const line = await recordUsage(
+    KANBAN,
+    { repoName: "me/repo", repoPath: "/x", dir: unpricedSession(), sinceMs: 0 },
+    stubApi([]),
+    async () => {
+      throw new Error("offline");
+    },
+  );
+  assert.match(
+    line,
+    /→ cost unknown \(no price for claude-opus-5-5; priced part \$0\.0000\)/,
   );
 });

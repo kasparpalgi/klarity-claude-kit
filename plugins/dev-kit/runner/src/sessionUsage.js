@@ -10,6 +10,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { hasKanban, runnerApi } from "./kanban.js";
+import { fetchClaudePricing, upsertPricing } from "./pricing.js";
 
 const PROJECTS = join(homedir(), ".claude", "projects");
 const M = 1_000_000;
@@ -93,8 +94,8 @@ const priceOf = (pricing, model) =>
 
 /**
  * API-list cost of a per-model breakdown, plus the model that dominated it. An
- * unpriced model costs 0 and is named in `missing` — LiteLLM lags a brand-new
- * id by days and that must never crash a run's bookkeeping.
+ * unpriced model adds nothing and is named in `missing`, so `costUsd` is then only
+ * the priced part — a floor, not the bill. It never crashes the bookkeeping.
  */
 export function costOf(byModel, pricing) {
   const missing = [];
@@ -140,6 +141,7 @@ export async function recordUsage(
   kanban,
   { repoName, repoPath, todoId = null, sinceMs, dir = projectDir(repoPath) },
   api = runnerApi,
+  fetchPrices = fetchClaudePricing,
 ) {
   if (!hasKanban(kanban)) return null;
   const file = findSessionFile(dir, sinceMs);
@@ -159,7 +161,15 @@ export async function recordUsage(
   if (!userId) return `usage: no board owner for ${repoName} — not recorded`;
 
   const pricing = Object.fromEntries(prices.map((r) => [r.model, r]));
-  const { costUsd, model, missing } = costOf(byModel, pricing);
+  let { costUsd, model, missing } = costOf(byModel, pricing);
+  // LiteLLM often lists a new model days before the scheduled pricing job runs
+  // (or on a machine without it), so fetch it now and share what it has.
+  if (missing.length) {
+    const fresh = await fetchPrices().catch(() => []);
+    for (const r of fresh) pricing[r.model] = r;
+    ({ costUsd, model, missing } = costOf(byModel, pricing));
+    await upsertPricing(kanban, fresh, api).catch(() => 0);
+  }
   const t = totalsOf(byModel);
   const row = {
     session_id: sessionId,
@@ -172,12 +182,16 @@ export async function recordUsage(
     cache_read_tokens: t.cacheRead,
     cache_write_tokens: t.cacheWrite,
     usage_by_model: byModel,
+    // The Kanban's column is NOT NULL: an unpriced run stores its priced floor.
     cost_usd: costUsd,
     started_at: startedAt,
     ended_at: endedAt,
   };
   await api(kanban, "recordUsage", { row });
   const read = t.input + t.cacheRead + t.cacheWrite;
-  const warn = missing.length ? ` (no price for ${missing.join(", ")})` : "";
-  return `usage: ${model} ${read} in / ${t.output} out → $${costUsd.toFixed(4)}${warn}`;
+  const cost = `$${costUsd.toFixed(4)}`;
+  const shown = missing.length
+    ? `cost unknown (no price for ${missing.join(", ")}; priced part ${cost})`
+    : cost;
+  return `usage: ${model} ${read} in / ${t.output} out → ${shown}`;
 }

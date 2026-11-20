@@ -96,3 +96,16 @@ test("upsertPricing skips the request for an empty row set", async () => {
   };
   assert.equal(await upsertPricing({}, [], api), 0);
 });
+
+test("per-mtok prices drop floating-point noise (#19)", () => {
+  const [row] = mapLitellmPricing({
+    "claude-opus-5-5": {
+      litellm_provider: "anthropic",
+      mode: "chat",
+      input_cost_per_token: 4e-6,
+      output_cost_per_token: 2e-5,
+      cache_read_input_token_cost: 2e-7,
+    },
+  });
+  assert.equal(row.cache_read_per_mtok, 0.2); // not 0.19999999999999998
+});

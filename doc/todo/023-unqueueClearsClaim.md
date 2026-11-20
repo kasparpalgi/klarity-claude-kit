@@ -18,3 +18,5 @@ In svelte-todo-kanban's `unqueue` (`src/lib/server/unqueue.ts`): when the `-TODO
 renames to a draft has no `> Machine:` line and the card's `agent_machine` is set, that
 value is a runner's claim, not a person's choice — clear it in the same step. Test the
 Backlog-and-back round trip there; keep the runner-side release as the second guard.
+
+_GitHub issue #23 — end the commit subject with `(#23)`._

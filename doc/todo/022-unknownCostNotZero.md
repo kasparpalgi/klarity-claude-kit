@@ -20,3 +20,5 @@ in three places: the Hasura migration, the D1 `real().notNull()` schema and the
 3. **Backfill:** rows recorded for `claude-opus-5-5` before its price landed
    (2026-11-20) still say `0`. Their `usage_by_model` holds the tokens, so re-cost them
    from `claude_model_pricing`. One SQL update or a one-off script will do it.
+
+_GitHub issue #22 — end the commit subject with `(#22)`._

@@ -193,6 +193,11 @@ Safety rails:
   `herdr down — falling back to headless`. It never wedges on herdr's absence.
 - A block nobody answers within `blockedMinutes` closes the tab and leaves the task
   file as `-TODO`, so the queue advances.
+- A session left running in its pane (still working, or waiting on a question) that
+  later ends with its task still `-TODO` is **parked**, not restarted. A fresh session
+  would ask again what was already answered in the old one, and with the try given back
+  it looped as "attempt 1". The card shows ⏸ Needs you. Write the answers into the
+  task file (any edit re-arms it), or rename it `-DONE` / `-BLOCKED`.
 - Any surviving `task-*` agent is a leak from a crashed run and is reaped at the start
   of the next one.
 

@@ -279,7 +279,38 @@ async function recordLeftAlone(repoName) {
       (err) => `usage: not recorded — ${err.message}`,
     );
     if (spent) log(`  ${key} ${spent}`);
+    await parkUnfinished(repoName, run);
   }
+}
+
+/**
+ * A left-alone session that ended with its task still -TODO is not run again from
+ * scratch: the fresh session asked the owner the same questions they had answered
+ * in the old one, and a task that never renames looped as "attempt 1" forever, the
+ * try given back each time (server 056; ezysmart-web 100 ran 3 times on dell, then on
+ * karel). Park this file version like a stuck task; an edit (the answers written into
+ * the file) re-arms it.
+ */
+async function parkUnfinished(repoName, run) {
+  if (!run.path || !existsSync(run.path)) return; // retired, or pulled away
+  state.addTry(repoName, run.stem, statSync(run.path).mtimeMs, 3);
+  const done = retired(run.repoPath, run.dir, run.stem);
+  const why = done
+    ? "its session renamed the task in the worktree but nothing landed it"
+    : "its session ended before the task was renamed -DONE or -BLOCKED";
+  log(`⏸ ${repoName} ${run.name} — ${why}; parked until the file is edited`);
+  await openStatus(cfg.kanban, {
+    repoName,
+    todoId: run.todoId,
+    machine: myName(cfg),
+    first: "needs",
+    note: "session ended unfinished: write the answers into the task file to re-run it",
+    log,
+  }).catch(() => {});
+  await notify(
+    "Runner ⏸ session ended unfinished",
+    `${repoName} ${run.name}\n\n${why}. Not restarted: a fresh session would ask again what was answered in the old one. Write the answers into the task file (any edit re-arms it), or rename it -DONE / -BLOCKED.`,
+  );
 }
 
 /** `repo#task` already pinged as waiting behind its repo's block (#66). */
@@ -688,6 +719,10 @@ async function runRepo(repoName, repoPath) {
       repoPath: cwd,
       todoId: cardIdOf(content),
       sinceMs: runStartMs,
+      stem: taskStem,
+      name: filename,
+      dir,
+      path: join(repoPath, dir, filename),
     });
     log(`… ${filename} — still running in its pane, left alone`);
     return true;

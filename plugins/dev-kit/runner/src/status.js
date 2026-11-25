@@ -11,7 +11,8 @@
  */
 
 import { hostname } from "node:os";
-import { boardOf, hasKanban, runnerApi } from "./kanban.js";
+import { readFileSync } from "node:fs";
+import { boardOf, cardIdOf, hasKanban, runnerApi } from "./kanban.js";
 
 /** The prefixes the Kanban's `cardThread.ts` drops from a re-queued task file. */
 export const STATUS =
@@ -145,4 +146,31 @@ export async function openStatus(
   };
   await say(first, { note });
   return say;
+}
+
+/**
+ * A walled runner without `handOver` keeps its tasks until the reset, and their cards
+ * said nothing: svelte-todo-kanban's 267, addressed to windows while it shared karel's
+ * wall, read as "not picked up" (klarity-claude-kit#26). Once per task and reset, a
+ * task that names this machine gets `⏳ Waiting on windows … usage limit, back …`.
+ */
+const told = new Set();
+export async function sayWalled(
+  kanban,
+  { repoName, tasks, machine, until, log },
+) {
+  for (const t of tasks) {
+    const key = `${repoName}#${t.stem}#${until}`;
+    const todoId = cardIdOf(readFileSync(t.path, "utf8"));
+    if (told.has(key) || !todoId) continue;
+    told.add(key);
+    await openStatus(kanban, {
+      repoName,
+      todoId,
+      machine,
+      log,
+      first: "waiting",
+      note: `usage limit, back ${until}`,
+    });
+  }
 }

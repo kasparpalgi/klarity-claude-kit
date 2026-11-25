@@ -85,7 +85,7 @@ import { trustProject } from "./trust.js";
 import { findSessionFile, projectDir, recordUsage } from "./sessionUsage.js";
 import { watchLink } from "./sessionLink.js";
 import { todoPrompt } from "./retry.js";
-import { costIn, openStatus } from "./status.js";
+import { costIn, openStatus, sayWalled } from "./status.js";
 import * as state from "./state.js";
 import { fileUnstick, fixerOf } from "./unstick.js";
 
@@ -487,7 +487,19 @@ async function runRepo(repoName, repoPath) {
 
   const me = myName(cfg);
   if (walled) {
-    if (!cfg.handOver || !me) return false;
+    if (!me) return false;
+    // Without handOver this machine keeps its tasks: their cards say it waits (#26).
+    if (!cfg.handOver) {
+      const isMine = machineFilter(cfg);
+      await sayWalled(cfg.kanban, {
+        repoName,
+        tasks: pending.filter((t) => t.machine && isMine(t.machine)),
+        machine: me,
+        until: stamp(walled),
+        log,
+      });
+      return false;
+    }
     // Nothing runs here until the reset: this machine's tasks go to a free one (#12).
     const line = await handOver({
       kanban: cfg.kanban,
@@ -1196,8 +1208,9 @@ async function tick() {
   const cooldown = state.cooldownUntil();
   if (cooldown) {
     log(`⏳ waiting out usage limit until ${stamp(cooldown)}`);
-    // With `handOver` each repo still gets its tick, but only to give tasks away.
-    if (!cfg.handOver || !cfg.machine) return;
+    // Each repo still gets its tick, but only to give tasks away (`handOver`) or to
+    // tell their cards this machine waits (#26).
+    if (!cfg.machine) return;
   }
   const entries = Object.entries(cfg.repos);
   const last = state.getLastRepo();

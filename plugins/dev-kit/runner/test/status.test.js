@@ -1,7 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { KANBAN, fakeApi } from "./fakeApi.js";
-import { STATUS, costIn, openStatus, statusLine } from "../src/status.js";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  STATUS,
+  costIn,
+  openStatus,
+  sayWalled,
+  statusLine,
+} from "../src/status.js";
 
 const CARD = "aaaaaaaa-1111-2222-3333-444455556666";
 const at = (h, m) => new Date(2026, 10, 8, h, m).getTime();
@@ -185,5 +194,23 @@ test("the Remote Control link, once known, stays on every later line (#85)", asy
   assert.match(
     comments[0].content,
     /^■ Finished .* · \$1\.50 · https:\/\/claude\.ai\/code\/session_01ABC$/,
+  );
+});
+
+test("a walled runner that keeps its tasks says so on each card, once per reset (#26)", async () => {
+  const { kanban, comments } = fakeKanban();
+  const path = join(mkdtempSync(join(tmpdir(), "walled-")), "267-x-TODO.md");
+  writeFileSync(
+    path,
+    `> Machine: windows\n\n_From Kanban card \`${CARD}\`, moved._\n`,
+  );
+  const tasks = [{ stem: "267-x", path }];
+  const walled = { repoName: "o/r", tasks, machine: "windows", until: "01:25" };
+  await sayWalled(kanban, walled);
+  await sayWalled(kanban, walled);
+  assert.equal(comments.length, 1);
+  assert.match(
+    comments[0].content,
+    /^⏳ Waiting on windows since .* · usage limit, back 01:25$/,
   );
 });

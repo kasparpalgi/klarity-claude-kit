@@ -731,7 +731,10 @@ first free runner claims each one as usual, and the phone gets `Runner ↪ hande
 
 A runner that lost a claim asks the card again after ten minutes, so an Auto task it gave back
 moves too. Leave `handOver` off where the board pins someone's cards to that one machine
-(`windows`). Those cards wait for it.
+(`windows`). Those cards wait for it. Each of those cards says so once per reset, in its status comment —
+`⏳ Waiting on windows since 22:56 · usage limit, back 26/11/2026, 01:25 EET` — so a waiting
+card does not read as "not picked up" (klarity-claude-kit#26). A card with no such line and
+no `▶ Running` means its runner is not running at all.
 
 ## CLI flags
 

@@ -75,6 +75,20 @@ export async function paneLive(name) {
   }
 }
 
+/**
+ * Close every `name` tab, whatever its agent is doing: closing the tab ends the agent.
+ * For a session the runner has written off, so it cannot come back on its own (#25).
+ */
+export async function closePane(name) {
+  try {
+    const { tabs } = await hx(["tab", "list"], 5000);
+    for (const t of tabs.filter((t) => t.label === name))
+      await hx(["tab", "close", t.tab_id]).catch(() => {});
+  } catch {
+    // herdr down: there is no pane to end.
+  }
+}
+
 async function ensureWorkspace(cwd) {
   const { workspaces } = await hx(["workspace", "list"]);
   if (workspaces.length) return workspaces[0].workspace_id;

@@ -19,7 +19,7 @@ import { dirname, join } from "node:path";
 import { classify, explicitTier } from "./classify.js";
 import { lastApiError, usageLimitHit } from "./usage.js";
 import { aiderArgs, aiderFailed, excludeAiderFiles } from "./aider.js";
-import { herdrUp, paneLive, runInHerdr } from "./herdr.js";
+import { closePane, herdrUp, paneLive, runInHerdr } from "./herdr.js";
 import { onList, unpush, watchCard } from "./leave.js";
 import { notify, notifyLine, tail } from "./notify.js";
 import { kanbanLine, loadConfig, prFlow } from "./config.js";
@@ -656,6 +656,12 @@ async function runRepo(repoName, repoPath) {
     tier.engine || stopped ? null : usageLimitHit(`${output}\n${apiError}`);
   if (limit) {
     state.setCooldown(limit.untilMs);
+    // Claude Code resumes a walled session by itself at the reset ("continuing
+    // automatically at 6:40pm"), and its pane reads idle until then. The hand-over
+    // gave ezysmart-web 100 to karel and closed its worktree while servo's session
+    // waited, and both ran it (#25). The retry is ours, here or on a free runner.
+    if (cfg.useHerdr) await closePane(`task-${number}`);
+    live = false;
     // Hitting the usage wall is the account's state, not this task's fault —
     // give back the attempt we took at line ~139 so a run that started with
     // ~no budget left (task-018) doesn't count toward the 3-strikes skip.

@@ -700,6 +700,14 @@ runner reads it there too. The Mac's two runs of 018 ended on an API error after
 each. No limit was read off the pane, so both counted as failures and the task was parked as stuck
 (#19). Any other API error a run ends on goes onto the card's `✘` line.
 
+**A walled session is ended, not left waiting** (#25). Claude Code resumes a session that hit
+the wall by itself at the reset ("continuing automatically at 6:40pm"), and its pane reads idle
+until then, so neither the re-claim guard nor the hand-over saw it as running: servo handed
+ezysmart-web's 100 to karel and removed its worktree while its own session waited, and at the
+reset both worked on the card. So once the runner reads the wall it closes that pane
+(`src/herdr.js` `closePane`). The retry is the runner's own: from the kept worktree after the
+reset, or on a free runner through the hand-over.
+
 **The wall is one machine's, so its queue moves on** (klarity-claude-kit#12). Each machine
 bills its own account, if it has one of its own: while the Mac waits out its reset, dell is
 free. karel and windows share one account, with one reset, so handing work between them gains

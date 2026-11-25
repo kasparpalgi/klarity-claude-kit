@@ -7,7 +7,7 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { paneLive, runInHerdr } from "../src/herdr.js";
+import { closePane, paneLive, runInHerdr } from "../src/herdr.js";
 
 const ok = (r) => `{"result":${r}}`;
 const fail = (code) => `echo '{"error":{"code":"${code}"}}' >&2; exit 1`;
@@ -164,4 +164,18 @@ test("a pane that never shows the link still runs, without one", async () => {
   const r = await run({ onRemote: (u) => urls.push(u) });
   assert.equal(r.code, 0);
   assert.deepEqual(urls, []);
+});
+
+test("closePane ends the named tab even while its agent waits or works (#25)", async () => {
+  const closed = join(mkdtempSync(join(tmpdir(), "close-")), "closed");
+  writeFileSync(closed, "");
+  const tabs = [
+    { tab_id: "t1", label: "task-001", agent_status: "idle" },
+    { tab_id: "t2", label: "task-002", agent_status: "working" },
+    { tab_id: "t3", label: "task-001", agent_status: "working" },
+  ];
+  fakeHerdr(`"tab list") echo '${ok(JSON.stringify({ tabs }))}' ;;
+"tab close") echo "$3" >> ${closed}; echo '${ok("{}")}' ;;`);
+  await closePane("task-001");
+  assert.equal(readFileSync(closed, "utf8"), "t1\nt3\n");
 });

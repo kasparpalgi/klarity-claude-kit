@@ -17,7 +17,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { classify, explicitTier } from "./classify.js";
-import { lastApiError, usageLimitHit } from "./usage.js";
+import { lastApiError, loginLost, usageLimitHit } from "./usage.js";
 import { aiderArgs, aiderFailed, excludeAiderFiles } from "./aider.js";
 import { closePane, herdrUp, paneLive, runInHerdr } from "./herdr.js";
 import { onList, unpush, watchCard } from "./leave.js";
@@ -695,8 +695,11 @@ async function runRepo(repoName, repoPath) {
   // Gemini via aider is not on the Claude budget; its output is not the CLI's.
   // The transcript too: the pane can miss the wall that ended the session (#19).
   const apiError = lastApiError(findSessionFile(projectDir(cwd), runStartMs));
+  const ending = `${output}\n${apiError}`;
   const limit =
-    tier.engine || stopped ? null : usageLimitHit(`${output}\n${apiError}`);
+    tier.engine || stopped
+      ? null
+      : (usageLimitHit(ending) ?? loginLost(ending));
   if (limit) {
     state.setCooldown(limit.untilMs);
     // Claude Code resumes a walled session by itself at the reset ("continuing
@@ -710,15 +713,17 @@ async function runRepo(repoName, repoPath) {
     // ~no budget left (task-018) doesn't count toward the 3-strikes skip.
     state.addTry(repoName, taskStem, mtime, -1);
     const until = stamp(limit.untilMs);
-    log(
-      `⏳ ${filename} — usage limit at ${tier.label}, waiting until ${until}`,
-    );
+    const login = limit.scope === "login";
+    const what = login
+      ? `Claude login expired on ${myName(cfg) ?? "this machine"}`
+      : "usage limit";
+    log(`⏳ ${filename} — ${what} at ${tier.label}, waiting until ${until}`);
     await notify(
-      "Runner ⏳ usage limit",
-      `${repoName} ${filename}\n\nWaiting until ${until}`,
+      login ? "Runner 🔑 logged out" : "Runner ⏳ usage limit",
+      `${repoName} ${filename}\n\n${login ? "Run `claude` then /login on that machine. " : ""}Waiting until ${until}`,
     );
     waitingOnLimit = true;
-    await say("waiting", { note: `usage limit, back ${until}` });
+    await say("waiting", { note: `${what}, back ${until}` });
   }
   // Only our wait ended: the pane still works or waits on a human. Finishing now
   // closed the worktree under a live session (#60). Leave it, like the re-claim

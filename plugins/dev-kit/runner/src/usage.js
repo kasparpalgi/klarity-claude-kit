@@ -129,3 +129,18 @@ export function lastApiError(file) {
     .join(" ")
     .trim();
 }
+
+const LOGGED_OUT =
+  /please run \/login|not logged in|login reached its time limit|oauth token has expired|invalid api key/i;
+const LOGIN_RECHECK_MS = 30 * 60_000;
+
+/**
+ * `{ untilMs, scope: "login" }` when the session died because this machine's Claude
+ * login expired. Like the wall it is the machine's state, not the task's: karel's
+ * expired login failed job 013 three times in seconds, parked it as stuck and filed
+ * an unstick task that failed the same way (klarity-claude-kit#27). Look again in 30 min.
+ */
+export const loginLost = (output, now = Date.now()) =>
+  LOGGED_OUT.test(output)
+    ? { untilMs: now + LOGIN_RECHECK_MS, scope: "login" }
+    : null;

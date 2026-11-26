@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { usageLimitHit } from "../src/usage.js";
+import { loginLost, usageLimitHit } from "../src/usage.js";
 
 test("no limit message returns null", () => {
   assert.equal(usageLimitHit("all good, task done"), null);
@@ -105,4 +105,15 @@ test("a zone Intl does not know stays on the fixed fallback", () => {
     now,
   );
   assert.equal(hit.untilMs, now + 5 * 3600_000);
+});
+
+test("an expired login is the machine's state, rechecked in 30 min (#27)", () => {
+  const now = 1_000_000;
+  const out = "● Login reached its time limit · Please run /login";
+  assert.equal(usageLimitHit(out, now), null);
+  assert.deepEqual(loginLost(out, now), {
+    untilMs: now + 30 * 60_000,
+    scope: "login",
+  });
+  assert.equal(loginLost("all done, renamed -DONE", now), null);
 });

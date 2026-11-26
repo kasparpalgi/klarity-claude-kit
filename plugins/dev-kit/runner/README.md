@@ -23,7 +23,7 @@ The `-DONE.md` rename **is** the state. No database, no marker files — restart
 
 ## Connect a new project
 
-Connect the board to its GitHub repo on todzz.eu and set the *agent list* — the column
+Connect the board to its GitHub repo on todzz.eu and set the _agent list_ — the column
 that means "ready for Claude". That is the whole of it. Within `onboardMinutes` each
 running daemon notices the new board and sets itself up for it; the phone gets a
 `Runner ＋ new repo` when it is watched. A card entering the agent list then makes the
@@ -38,15 +38,15 @@ npm run onboard          # --dry-run first if you want to see the plan
 
 Either way it reads every connected, unarchived board and does the rest:
 
-| It does | How it decides |
-| ------- | -------------- |
-| Finds the clone, or makes one | An existing checkout whose `origin` is that repo wins, wherever it was filed, and under any name GitHub redirects to it. Otherwise `gh repo clone` into `customers/<repo>` when the board has a client, `<repo>` when it does not |
-| Adds it to `config.json` | Only repos not already listed — a hand-placed path like `ezy/ezy-iot` is never rewritten. The daemon reloads the file each tick, so there is nothing to restart |
-| Enables `dev-kit@klarity` for the repo | Merged into the repo's own `.claude/settings.json`, keeping whatever is already in it |
-| Gives it a task folder | `doc/todo/`, unless the repo already keeps one at `.claude/todo/` |
-| Writes a `CLAUDE.md` stub | Only when there is none: the repo, the detected stack, and the `/plan` → `/todo` → `/verify` table |
-| Installs dependencies | Fresh clones only, by lockfile: pnpm / bun / yarn / `npm ci` / `uv sync` / `go mod download` / `cargo fetch`. `--no-install` skips it |
-| Commits and pushes all of it | An untracked file outside the task folder is a dirty tree to preflight, which would block the repo forever. The commit is path-scoped, so a repo mid-edit keeps its own work out of it |
+| It does                                | How it decides                                                                                                                                                                                                                    |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Finds the clone, or makes one          | An existing checkout whose `origin` is that repo wins, wherever it was filed, and under any name GitHub redirects to it. Otherwise `gh repo clone` into `customers/<repo>` when the board has a client, `<repo>` when it does not |
+| Adds it to `config.json`               | Only repos not already listed — a hand-placed path like `ezy/ezy-iot` is never rewritten. The daemon reloads the file each tick, so there is nothing to restart                                                                   |
+| Enables `dev-kit@klarity` for the repo | Merged into the repo's own `.claude/settings.json`, keeping whatever is already in it                                                                                                                                             |
+| Gives it a task folder                 | `doc/todo/`, unless the repo already keeps one at `.claude/todo/`                                                                                                                                                                 |
+| Writes a `CLAUDE.md` stub              | Only when there is none: the repo, the detected stack, and the `/plan` → `/todo` → `/verify` table                                                                                                                                |
+| Installs dependencies                  | Fresh clones only, by lockfile: pnpm / bun / yarn / `npm ci` / `uv sync` / `go mod download` / `cargo fetch`. `--no-install` skips it                                                                                             |
+| Commits and pushes all of it           | An untracked file outside the task folder is a dirty tree to preflight, which would block the repo forever. The commit is path-scoped, so a repo mid-edit keeps its own work out of it                                            |
 
 A repo renamed or transferred on GitHub stays one repo. `gh api repos/<owner>/<repo>`
 gives its current name, and the board, the `config.json` entry (with `pullRequests` and
@@ -100,8 +100,8 @@ claude plugin install dev-kit@klarity
 ```
 
 A repo's `CLAUDE.md` must let `/todo` commit to the base branch. One that tells agents
-to branch per task still works, but every card stops for a manual merge — see *Task
-left on a branch* below. Check the result with `npm run check`.
+to branch per task still works, but every card stops for a manual merge — see _Task
+left on a branch_ below. Check the result with `npm run check`.
 
 ## Guards — why it never wedges
 
@@ -109,21 +109,21 @@ The runner used to log `skip <repo> — dirty working tree` every 20 seconds for
 nothing on the board moving and no signal anywhere. Each state below is now either
 self-healed or announced exactly once, on the edge.
 
-| State | What the runner does |
-| ----- | -------------------- |
-| Dirt only inside the task folder | Commits it as `chore(todo): checkpoint uncommitted agent output` and carries on — that is a half-finished agent run, not your work |
-| Dirt anywhere else | Skips the repo and sends **⛔ blocked** listing the paths. Silent on every later tick, except **⛔ task waiting** once for each new task origin queues for this machine meanwhile (it fetches, never pulls); **▶ unblocked** when the tree is clean again |
-| The clone on a task branch with unpushed commits | Pushes the branch, returns to the base branch, sends **↗ task on a branch**. Nothing is lost and the queue keeps moving; you merge when ready |
-| The clone on a task branch already merged | Silently returns to the base branch |
-| Detached HEAD, unreachable origin, diverged base | Skips with **⛔ blocked** naming which one |
-| A run that ends **clean** but never renamed the file | Finishes the bookkeeping the agent skipped — renames to `-DONE`, notes it, commits, pushes, moves the card — and reports **✔**. A clean tree means nothing was left half-done, so this is the common "already complete / nothing to do" ending, not a failure |
-| A run that ends with its tree **dirty** | **⚠ did not finish**: parks the uncommitted work in a stash (recoverable with `git stash pop` from the clone — stashes are shared with the worktree) and names what was left. Exit 0 only means the agent stopped talking, so this is checked, never assumed. The dirt was in the task's worktree, never the clone, so the next task starts regardless |
-| A session that switched branch, rebased halfway or broke its tree | Only its worktree is affected: no agent ever runs in the clone (see *Every task in its own worktree*). Commits on a branch of the session's own making are pushed there with **↗ task on a branch**, never landed on the base branch |
-| Its commits will not land (rebase conflict, push refused) | **✘ did not land**: the worktree stays with the work in it, and the next attempt continues there. The clone and every other task move on |
-| A worktree left behind (its pane still worked, a usage-limit retry, a runner restart) | Each tick sweeps the repo's worktrees: one whose task is finished, with no live pane, is landed (push-to-main) or removed when nothing on it is lost (pull request repo). One whose card left the agent list lands nothing: its commits and dirt go to a stash, as when the card leaves mid-run. Landed, a half run's notes on ezyspace's main said "done in 018" for work that sat in a stash (#17). Its local branch goes once it is all on origin, and so does its trust entry in `~/.claude.json` |
-| A task that runs but keeps leaving the tree dirty | Two attempts, then **⏭ stuck task** once and that number is skipped so the queue advances. Editing the task file resets the count. The skip also files and pushes `NNN-unstick<N>-TODO.md` (`src/unstick.js`), at the task's own `> Run with:`. A task addressed to this machine gets a fixer addressed here too, with that reason in brackets (the stuck run's `.log` is here), so a usage wall never hands it away. An Auto task gets an Auto fixer and then gives its card back, so a runner that drops off the network holds nothing: the Mac parked ezyspace's 018 holding its card, then went offline, and karel, free again, skipped it as "claimed by another machine" (#17). The fixer reads the transcript and the stash, then finishes the task or renames it `-BLOCKED`, and the task waits while its fixer is queued, so the two never run side by side. One fixer per task number, and a stuck fixer gets none, so it can never loop |
-| The second attempt at a task | Runs `/todo NNN <note>`: the note says how attempt 1 ended (the reason, the stash commit holding its work, its `NNN-slug.log`), so it resumes instead of starting cold. The note lives in state.json, never in the task file, because editing the file resets the count. Attempt 1 is always the bare `/todo NNN` |
-| A card dragged out of the agent list mid-run | The tick loop is parked inside the run, so the run watches its own card: every `pollSeconds` it fetches origin's base branch into a private ref (never a pull, never `origin/*`, so it cannot race the agent's own `git pull`). Once the task was seen there and then has no `-TODO`/`-DONE`/`-BLOCKED` file left — renamed back to a draft or deleted — it closes the pane and kills its own `herdr` wait (a pending `agent wait` ignores its tab closing until it times out). Commits the agent made but never pushed are soft-reset (push-to-main repos), then the worktree's dirt is stashed, the worktree closed, an Auto card's claim released (#20), and **⏹ stopped — card left the agent list** names the stash. The attempt is given back; moving the card back writes a fresh `-TODO` that queues normally. In a pull-request repo the branch keeps any commits for the next run |
+| State                                                                                 | What the runner does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dirt only inside the task folder                                                      | Commits it as `chore(todo): checkpoint uncommitted agent output` and carries on — that is a half-finished agent run, not your work                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Dirt anywhere else                                                                    | Skips the repo and sends **⛔ blocked** listing the paths. Silent on every later tick, except **⛔ task waiting** once for each new task origin queues for this machine meanwhile (it fetches, never pulls); **▶ unblocked** when the tree is clean again                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| The clone on a task branch with unpushed commits                                      | Pushes the branch, returns to the base branch, sends **↗ task on a branch**. Nothing is lost and the queue keeps moving; you merge when ready                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| The clone on a task branch already merged                                             | Silently returns to the base branch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Detached HEAD, unreachable origin, diverged base                                      | Skips with **⛔ blocked** naming which one                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| A run that ends **clean** but never renamed the file                                  | Finishes the bookkeeping the agent skipped — renames to `-DONE`, notes it, commits, pushes, moves the card — and reports **✔**. A clean tree means nothing was left half-done, so this is the common "already complete / nothing to do" ending, not a failure                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| A run that ends with its tree **dirty**                                               | **⚠ did not finish**: parks the uncommitted work in a stash (recoverable with `git stash pop` from the clone — stashes are shared with the worktree) and names what was left. Exit 0 only means the agent stopped talking, so this is checked, never assumed. The dirt was in the task's worktree, never the clone, so the next task starts regardless                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| A session that switched branch, rebased halfway or broke its tree                     | Only its worktree is affected: no agent ever runs in the clone (see _Every task in its own worktree_). Commits on a branch of the session's own making are pushed there with **↗ task on a branch**, never landed on the base branch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Its commits will not land (rebase conflict, push refused)                             | **✘ did not land**: the worktree stays with the work in it, and the next attempt continues there. The clone and every other task move on                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| A worktree left behind (its pane still worked, a usage-limit retry, a runner restart) | Each tick sweeps the repo's worktrees: one whose task is finished, with no live pane, is landed (push-to-main) or removed when nothing on it is lost (pull request repo). One whose card left the agent list lands nothing: its commits and dirt go to a stash, as when the card leaves mid-run. Landed, a half run's notes on ezyspace's main said "done in 018" for work that sat in a stash (#17). Its local branch goes once it is all on origin, and so does its trust entry in `~/.claude.json`                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| A task that runs but keeps leaving the tree dirty                                     | Two attempts, then **⏭ stuck task** once and that number is skipped so the queue advances. Editing the task file resets the count. The skip also files and pushes `NNN-unstick<N>-TODO.md` (`src/unstick.js`), at the task's own `> Run with:`. A task addressed to this machine gets a fixer addressed here too, with that reason in brackets (the stuck run's `.log` is here), so a usage wall never hands it away. An Auto task gets an Auto fixer and then gives its card back, so a runner that drops off the network holds nothing: the Mac parked ezyspace's 018 holding its card, then went offline, and karel, free again, skipped it as "claimed by another machine" (#17). The fixer reads the transcript and the stash, then finishes the task or renames it `-BLOCKED`, and the task waits while its fixer is queued, so the two never run side by side. One fixer per task number, and a stuck fixer gets none, so it can never loop |
+| The second attempt at a task                                                          | Runs `/todo NNN <note>`: the note says how attempt 1 ended (the reason, the stash commit holding its work, its `NNN-slug.log`), so it resumes instead of starting cold. The note lives in state.json, never in the task file, because editing the file resets the count. Attempt 1 is always the bare `/todo NNN`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| A card dragged out of the agent list mid-run                                          | The tick loop is parked inside the run, so the run watches its own card: every `pollSeconds` it fetches origin's base branch into a private ref (never a pull, never `origin/*`, so it cannot race the agent's own `git pull`). Once the task was seen there and then has no `-TODO`/`-DONE`/`-BLOCKED` file left — renamed back to a draft or deleted — it closes the pane and kills its own `herdr` wait (a pending `agent wait` ignores its tab closing until it times out). Commits the agent made but never pushed are soft-reset (push-to-main repos), then the worktree's dirt is stashed, the worktree closed, an Auto card's claim released (#20), and **⏹ stopped — card left the agent list** names the stash. The attempt is given back; moving the card back writes a fresh `-TODO` that queues normally. In a pull-request repo the branch keeps any commits for the next run                                                        |
 
 Attempt counts and blocked reasons live in `~/.kanban-runner/state.json` — deliberately
 outside every repo, so runner bookkeeping can never dirty a working tree. Delete the file
@@ -242,7 +242,7 @@ window, not a replacement, and the runner still decides everything from the pane
   the link from the run's transcript (its `bridge-session` line) and adds it to the
   status line as soon as it shows, `remoteControl` or not (svelte-todo-kanban#221).
 - **Native push.** To have the Claude app ping you too, run `/config` in `claude` once on
-  that machine and turn on *Push when actions required*.
+  that machine and turn on _Push when actions required_.
 
 ## Headless mode (launchd)
 
@@ -334,7 +334,7 @@ Each tick (one per `pollSeconds`), for each configured repo:
 
 1. **Preflight** — classify any dirt, return to the base branch, `git fetch` and
    `git pull --ff-only`. Anything unresolvable skips the repo with one notification
-   (see *Guards* above).
+   (see _Guards_ above).
 2. Find the task folder (`.claude/todo` if it exists, else `doc/todo`).
 3. List every `NNN-slug-TODO.md` with no `NNN-slug-DONE.md` (or `-BLOCKED.md`) **of its
    own stem**, lowest number first, and take the first one that has not already used up
@@ -366,7 +366,7 @@ says `npm ci in the new worktree`).
   anything unpushed onto `origin/main` and pushes it, removes the worktree and its
   branch, and fast-forwards the clone. An older `/todo` that runs `git push origin main`
   pushes nothing of its own, and the runner lands its commits all the same.
-- **Pull-request repos** run on `todo/<stem>` and ship as a PR (see *Pull-request repos*).
+- **Pull-request repos** run on `todo/<stem>` and ship as a PR (see _Pull-request repos_).
 - **Kept** while its pane still works, for the retry after a usage limit (which reuses it
   as it is), and when its work would not land. The sweep removes it once its task is over.
 - **Cleaned up** with it: the `node_modules`, the local branch once it is all on origin
@@ -409,13 +409,13 @@ in the repo, not a stale box.
 
 ## Where the logs are
 
-| Log | What is in it |
-| --- | ------------- |
-| `~/Library/Logs/kanban-runner.log` | the daemon's own tick log — every skip, run, push and reason. `tail -f` this first |
-| `<repo>/<task dir>/NNN-slug.log` | the full Claude session transcript for that task, written after every run, gitignored |
-| `~/.kanban-runner/state.json` | current blocked reason per repo and attempt count per task |
-| `npm run check` | the same picture as state.json, rendered, plus herdr's status |
-| herdr, at `https://herdr.servicehost.io` | the live pane while a task is running |
+| Log                                      | What is in it                                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------------- |
+| `~/Library/Logs/kanban-runner.log`       | the daemon's own tick log — every skip, run, push and reason. `tail -f` this first    |
+| `<repo>/<task dir>/NNN-slug.log`         | the full Claude session transcript for that task, written after every run, gitignored |
+| `~/.kanban-runner/state.json`            | current blocked reason per repo and attempt count per task                            |
+| `npm run check`                          | the same picture as state.json, rendered, plus herdr's status                         |
+| herdr, at `https://herdr.servicehost.io` | the live pane while a task is running                                                 |
 
 The daemon log is stdout/stderr from launchd, so its path is whatever
 `launchd.plist.example` sets — change it there, not in the code.
@@ -424,25 +424,25 @@ The daemon log is stdout/stderr from launchd, so its path is whatever
 
 `config.json` is gitignored.
 
-| Key           | Meaning                                                       |
-| ------------- | ------------------------------------------------------------- |
-| `pollSeconds`    | how often to pull (default 60)                                 |
-| `repos`          | `"owner/repo"` → local clone path; `~/` is expanded at runtime  |
-| `useHerdr`       | run Claude in a herdr pane, visible on the phone (default false) |
-| `unattended`     | on the herdr path, skip permissions instead of asking (true here) |
-| `chrome`         | start every session with `claude --chrome` so it can drive the paired Chrome (default true). A session only gets the browser tools it started with |
-| `remoteControl`  | on the herdr path, also open the session in claude.ai/code and the Claude app (default false). See *Remote Control* below |
-| `cloud`          | send `> Machine: cloud` tasks to Claude Code cloud sessions (default false). One runner only, on the account the sessions should bill. See *Cloud* below |
-| `handOver`       | at the usage wall, put this machine's waiting tasks back on Auto for a free runner (default false). See *Usage limits* |
+| Key              | Meaning                                                                                                                                                                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pollSeconds`    | how often to pull (default 60)                                                                                                                                                                                                           |
+| `repos`          | `"owner/repo"` → local clone path; `~/` is expanded at runtime                                                                                                                                                                           |
+| `useHerdr`       | run Claude in a herdr pane, visible on the phone (default false)                                                                                                                                                                         |
+| `unattended`     | on the herdr path, skip permissions instead of asking (true here)                                                                                                                                                                        |
+| `chrome`         | start every session with `claude --chrome` so it can drive the paired Chrome (default true). A session only gets the browser tools it started with                                                                                       |
+| `remoteControl`  | on the herdr path, also open the session in claude.ai/code and the Claude app (default false). See _Remote Control_ below                                                                                                                |
+| `cloud`          | send `> Machine: cloud` tasks to Claude Code cloud sessions (default false). One runner only, on the account the sessions should bill. See _Cloud_ below                                                                                 |
+| `handOver`       | at the usage wall, put this machine's waiting tasks back on Auto for a free runner (default false). See _Usage limits_                                                                                                                   |
 | `taskMinutes`    | cap on one `/todo` run (default 240) — only a still-`working` agent ever reaches it, so it guards against a hung agent, not a long task. At 45, Opus/high tasks with an E2E run were parked mid-work and re-run (tekdok 034, kanban 206) |
-| `blockedMinutes` | how long to wait for a human to answer a prompt (default 30)    |
-| `machine`        | this computer's id — a string or a list of spellings it answers to. Unset means it is the only runner and takes every task |
-| `codeRoot`       | where onboarding looks for clones and puts new ones (default `~/Documents/GitHub`) |
-| `onboardMinutes` | how often the daemon adopts newly connected boards (default 5; `0` turns it off) |
-| `seo`            | repos (`"owner/repo"`) that also get the claude-seo plugin — landing / marketing sites only. A board gets it too with `"seo": true` in its `github` JSON. For an already-onboarded repo, add it here and run `npm run onboard -- --all` |
-| `machines`       | every runner id on the board (`cloud` is implied). Listed, a task addressed to none of them is reported once instead of waiting silently. Set it on one runner |
-| `peers`          | host → this runner's folder on it; `npm run onboard` repeats itself there over ssh, and the sweep pushes secrets there. Omit on the peer |
-| `pullRequests`   | repos (`"owner/repo"`) where every change is a pull request — see below. Only a repo whose CI merges green PRs by itself belongs here, or its tasks never finish |
+| `blockedMinutes` | how long to wait for a human to answer a prompt (default 30)                                                                                                                                                                             |
+| `machine`        | this computer's id — a string or a list of spellings it answers to. Unset means it is the only runner and takes every task                                                                                                               |
+| `codeRoot`       | where onboarding looks for clones and puts new ones (default `~/Documents/GitHub`)                                                                                                                                                       |
+| `onboardMinutes` | how often the daemon adopts newly connected boards (default 5; `0` turns it off)                                                                                                                                                         |
+| `seo`            | repos (`"owner/repo"`) that also get the claude-seo plugin — landing / marketing sites only. A board gets it too with `"seo": true` in its `github` JSON. For an already-onboarded repo, add it here and run `npm run onboard -- --all`  |
+| `machines`       | every runner id on the board (`cloud` is implied). Listed, a task addressed to none of them is reported once instead of waiting silently. Set it on one runner                                                                           |
+| `peers`          | host → this runner's folder on it; `npm run onboard` repeats itself there over ssh, and the sweep pushes secrets there. Omit on the peer                                                                                                 |
+| `pullRequests`   | repos (`"owner/repo"`) where every change is a pull request — see below. Only a repo whose CI merges green PRs by itself belongs here, or its tasks never finish                                                                         |
 
 ## Secrets on the peers
 
@@ -456,14 +456,14 @@ npm run sync-secrets -- --dry-run   # what would go where
 npm run sync-secrets                # do it now rather than wait for the sweep
 ```
 
-| Rule | Why |
-| ---- | --- |
-| Files: `.env*` (not `.example`/`.sample`), `hasura/config.yaml`, `.secrets/` — only when gitignored | A committed file is git's job |
-| Repos match by `owner/repo` key, not path | `job` is `customers/job` here and `job` on Dell |
-| A differing file is overwritten from the Mac | One source of truth; edit secrets on the Mac |
-| A file only the peer has is never touched | Put a peer-only override in a file the Mac does not have |
-| A repo the peer has not cloned yet is skipped | Its own sweep adopts it; the secrets follow one sweep later |
-| `COPYFILE_DISABLE=1` on the tar | macOS tar adds `._.env` beside each file — not gitignored, so it dirtied 14 repos on the peers and blocked them |
+| Rule                                                                                                | Why                                                                                                             |
+| --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Files: `.env*` (not `.example`/`.sample`), `hasura/config.yaml`, `.secrets/` — only when gitignored | A committed file is git's job                                                                                   |
+| Repos match by `owner/repo` key, not path                                                           | `job` is `customers/job` here and `job` on Dell                                                                 |
+| A differing file is overwritten from the Mac                                                        | One source of truth; edit secrets on the Mac                                                                    |
+| A file only the peer has is never touched                                                           | Put a peer-only override in a file the Mac does not have                                                        |
+| A repo the peer has not cloned yet is skipped                                                       | Its own sweep adopts it; the secrets follow one sweep later                                                     |
+| `COPYFILE_DISABLE=1` on the tar                                                                     | macOS tar adds `._.env` beside each file — not gitignored, so it dirtied 14 repos on the peers and blocked them |
 
 Only a machine with `peers` in its config pushes, which is the Mac alone. A peer that is
 switched off is logged once, and again when it is back.
@@ -501,7 +501,7 @@ Backlog or a `-BLOCKED.md`, and one waiting on other work in `> After: #N` — n
 `-TODO.md` with a made-up machine.
 
 A machine at its usage wall gives its bare-addressed tasks away until the reset (see
-*Usage limits*).
+_Usage limits_).
 
 A file with **no** `> Machine:` line is unaddressed — "Auto" on the card. Any runner
 may take it, but claims it first, in the Kanban: it sets the
@@ -525,8 +525,7 @@ while this runner holds neither a run nor a worktree for it still keeps its clai
 
 **Every runner needs `apiToken`** (#19). The two locks do not see each other: windows, with no
 token after the move off Hasura, pushed `claim 018 for windows` in the same second that karel
-won the card, and both ran ezyspace's 018 on one account; it happened again with tektok-app's
-548. Since #24 a named runner without a token claims no Auto task: it runs only the tasks that
+won the card, and both ran ezyspace's 018 on one account; it happened again with tektok-app's 548. Since #24 a named runner without a token claims no Auto task: it runs only the tasks that
 name it and logs `skip … is Auto, and without an apiToken …` once per task. It says
 `kanban: OFF — no apiToken …` when it starts and in `--check`.
 
@@ -627,7 +626,7 @@ The task file's first line decides:
 > Run with: Opus 4.8 / xhigh
 ```
 
-**Family + version** together select the model. The version is *not* decoration: the
+**Family + version** together select the model. The version is _not_ decoration: the
 runner passes the full model id (`--model claude-opus-4-8`), so `Sonnet 4.6` really runs
 Sonnet 4.6. A bare family name means that family's latest. A version that is not in the
 table falls back to the family's latest rather than failing the run.
@@ -638,18 +637,18 @@ independent: `Sonnet 4.6 / max` and `Opus 5 / low` are both legal.
 
 Everything lives in one table, `FAMILIES` in `src/classify.js`:
 
-| Family   | Versions           | Latest | Default effort |
-| -------- | ------------------ | ------ | -------------- |
-| `fable`  | 5.1                | 5.1    | high           |
-| `opus`   | 4.6, 4.8, 5, 5.5   | 5.5    | high           |
-| `sonnet` | 4.6, 5, 5.5        | 5.5    | medium         |
-| `haiku`  | 4.5                | 4.5    | low            |
-| `gemini` | 3.8 (Flash, free)  | 3.8    | medium — only low/medium/high |
+| Family   | Versions          | Latest | Default effort                |
+| -------- | ----------------- | ------ | ----------------------------- |
+| `fable`  | 5.1               | 5.1    | high                          |
+| `opus`   | 4.6, 4.8, 5, 5.5  | 5.5    | high                          |
+| `sonnet` | 4.6, 5, 5.5       | 5.5    | medium                        |
+| `haiku`  | 4.5               | 4.5    | low                           |
+| `gemini` | 3.8 (Flash, free) | 3.8    | medium — only low/medium/high |
 
 Add a version by putting its model id in that family's `versions`.
 
 With no `Run with:` line at all (model **Auto** on the card), one `claude -p` call picks
-a *family and effort*; the version is that family's latest. Any trouble falls back to
+a _family and effort_; the version is that family's latest. Any trouble falls back to
 `Sonnet 5.5 / medium`. Fable is never auto-chosen — it bills usage credits, so it has to
 be asked for by name.
 
@@ -699,6 +698,13 @@ started with almost no budget left doesn't count toward the 3-strikes skip. The 
 and the `Runner ⏳ usage limit` notification show that moment in the machine's local time,
 with its zone (`08/11/2026, 00:11 EET`).
 
+An expired Claude login (`Login reached its time limit · Please run /login`, `Not logged
+in`) is handled the same way: it is the machine's state, not the task's (#27). The attempt
+is given back, the runner pauses for 30 minutes (handing over or waiting like a wall), and
+`Runner 🔑 logged out` asks for `claude` → `/login` on that machine. Before this, karel's expired
+login failed job 013 three times in seconds, parked it as stuck and filed an unstick task that
+failed the same way.
+
 The pane is not the only place the wall shows. Claude Code also writes it into the session
 transcript, as the API error the session ended on (`src/usage.js` `lastApiError`), and the
 runner reads it there too. The Mac's two runs of 018 ended on an API error after eight seconds
@@ -738,20 +744,20 @@ no `▶ Running` means its runner is not running at all.
 
 ## CLI flags
 
-| Flag            | Effect                                              |
-| --------------- | --------------------------------------------------- |
+| Flag            | Effect                                                                                                                                                                                                                                  |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--check`       | Connected boards and any not yet onboarded, then per repo: path, current branch, task folder, dirty paths, open runner worktrees, blocked reason, pending tasks with attempt counts — plus whether the herdr server is up. Runs nothing |
-| `--once`        | Run a single tick and exit. For tests and manual pokes |
-| `--interactive` | Legacy tmux mode: drop `--dangerously-skip-permissions`; inherit stdin |
+| `--once`        | Run a single tick and exit. For tests and manual pokes                                                                                                                                                                                  |
+| `--interactive` | Legacy tmux mode: drop `--dangerously-skip-permissions`; inherit stdin                                                                                                                                                                  |
 
 `npm run onboard` (`src/onboard.js`) takes its own:
 
-| Flag | Effect |
-| ---- | ------ |
-| `--dry-run` | Print the plan — which repos are missing, where each would land. Writes nothing |
-| `--no-install` | Clone and configure, but do not run the stack's install command |
-| `--all` | Re-scaffold every connected board's repo, not just the ones missing from `config.json` — the repair path when a clone was left stale or a setup commit did not push |
-| `--no-peers` | This machine only. Passed automatically to each peer, so they never recurse |
+| Flag           | Effect                                                                                                                                                              |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--dry-run`    | Print the plan — which repos are missing, where each would land. Writes nothing                                                                                     |
+| `--no-install` | Clone and configure, but do not run the stack's install command                                                                                                     |
+| `--all`        | Re-scaffold every connected board's repo, not just the ones missing from `config.json` — the repair path when a clone was left stale or a setup commit did not push |
+| `--no-peers`   | This machine only. Passed automatically to each peer, so they never recurse                                                                                         |
 
 ## Phone notifications
 
@@ -763,55 +769,55 @@ topic). No topic means every notification is a silent no-op, and the daemon's fi
 `notify failed: …` in the runner log. (Pushbullet was dropped: its API now answers
 `pushbullet_pro_required`.)
 
-| Title | Meaning |
-| ----- | ------- |
-| `Runner ✔` / `Runner ✘` | a task finished / exited non-zero |
-| `Runner ⏸ needs you` | the agent is blocked on a prompt — answer it in the relay PWA |
-| `Runner ⛔ blocked` / `Runner ▶ unblocked` | a repo stopped / resumed being processable |
-| `Runner ⛔ task waiting` | a new task for this machine landed on origin while its repo is blocked |
-| `Runner ↗ task on a branch` | work was left on a task branch, pushed, waiting for your merge |
-| `Runner ⇄ PR` / `Runner ✘ → draft PR` | a pull-request repo's session ended on its PR — opened by the agent, or as a draft by the runner (after a failure, with what the session left) |
+| Title                                                                             | Meaning                                                                                                                                                                  |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Runner ✔` / `Runner ✘`                                                           | a task finished / exited non-zero                                                                                                                                        |
+| `Runner ⏸ needs you`                                                              | the agent is blocked on a prompt — answer it in the relay PWA                                                                                                            |
+| `Runner ⛔ blocked` / `Runner ▶ unblocked`                                        | a repo stopped / resumed being processable                                                                                                                               |
+| `Runner ⛔ task waiting`                                                          | a new task for this machine landed on origin while its repo is blocked                                                                                                   |
+| `Runner ↗ task on a branch`                                                       | work was left on a task branch, pushed, waiting for your merge                                                                                                           |
+| `Runner ⇄ PR` / `Runner ✘ → draft PR`                                             | a pull-request repo's session ended on its PR — opened by the agent, or as a draft by the runner (after a failure, with what the session left)                           |
 | `Runner ✘ branch did not ship` / `Runner ✘ did not land` / `Runner ✘ no worktree` | a task branch would not push, a push-to-main run's commits would not rebase or push onto the base branch, or its worktree would not open; the work stays in the worktree |
-| `Runner ↪ handed over` | this machine is at its usage wall, so the listed tasks went back to Auto for another runner |
-| `Runner ⚠ did not finish` | the agent stopped without renaming the file or committing |
-| `Runner ⏭ stuck task` | two runs, no `-DONE` rename; the task is skipped and an `unstick` fixer task is filed |
-| `Runner ＋ new repo` | a newly connected board was cloned, scaffolded and is now watched |
-| `Runner － repo removed` | the repo's board was archived or deleted: no longer watched, clone deleted (or kept, with the reason) |
-| `Runner ⚠ cannot onboard` | a connected board's repo would not clone or scaffold — said once, not every sweep |
+| `Runner ↪ handed over`                                                            | this machine is at its usage wall, so the listed tasks went back to Auto for another runner                                                                              |
+| `Runner ⚠ did not finish`                                                         | the agent stopped without renaming the file or committing                                                                                                                |
+| `Runner ⏭ stuck task`                                                             | two runs, no `-DONE` rename; the task is skipped and an `unstick` fixer task is filed                                                                                    |
+| `Runner ＋ new repo`                                                              | a newly connected board was cloned, scaffolded and is now watched                                                                                                        |
+| `Runner － repo removed`                                                          | the repo's board was archived or deleted: no longer watched, clone deleted (or kept, with the reason)                                                                    |
+| `Runner ⚠ cannot onboard`                                                         | a connected board's repo would not clone or scaffold — said once, not every sweep                                                                                        |
 
 ## Files
 
-| File | Role |
-| ---- | ---- |
-| `src/run.js`     | tick loop, one task per tick, `--check` |
-| `src/repo.js`    | git preflight: dirt classification, branch, fetch/pull |
-| `src/queue.js`   | task folder → pending list, attempt-limited pick |
-| `src/unstick.js` | the fixer task filed for a task that ran twice without finishing |
-| `src/state.js`   | `~/.kanban-runner/state.json`: blocked reasons, attempt counts, how the last attempt ended |
-| `src/retry.js`   | the `/todo` prompt: bare on attempt 1, plus the last ending on a retry |
-| `src/herdr.js`   | run Claude in a herdr pane, wait out blocks |
-| `src/classify.js`| model + effort tier for a task file |
-| `src/pricing.js` | LiteLLM price list → `claude_model_pricing` rows |
-| `src/sessionUsage.js` | read a run's transcript → one `claude_usage` row |
-| `src/sessionLink.js` | the run's claude.ai/code link, read from its transcript → the status line |
-| `src/status.js`  | the run's one live status comment on its card, edited as it goes |
-| `src/selfUpdate.js` | fast-forward the runner's own checkout so both machines run the same code |
-| `src/secrets.js` | gitignored secrets → the peers, on the sweep's clock; `npm run sync-secrets` by hand |
-| `src/onboard.js` | connected boards → clones, `config.json` entries, the peer machine. The daemon calls it on a timer |
-| `src/offboard.js` | archived or deleted boards → `config.json` entry and clone removed, secrets kept for a restore |
-| `src/waiting.js` | tasks on origin that a blocked clone cannot see yet, so the human hears about each one |
-| `src/scaffold.js`| one clone → plugin enabled, task folder, CLAUDE.md, dependencies |
-| `src/trust.js`   | pre-answer Claude's folder-trust dialog in `~/.claude.json` |
-| `src/followup.js`| new follow-up file → GitHub issue → Backlog card, file renamed to the issue number |
-| `src/screenshots.js` | a UI task's screenshots → attachments on its card |
-| `src/claim.js`   | claim an Auto (unaddressed) task on its Kanban card before running it |
-| `src/handover.js`| at the usage wall, this machine's waiting tasks back to Auto for a free runner |
-| `src/worktree.js`| a task's own branch and worktree, removing it again; for pull-request repos, shipping it as a PR |
-| `src/land.js`    | push-to-main repos: land a run's commits on the base branch from its worktree, catch the clone up |
-| `src/sweep.js`   | worktrees and branches a run left behind, put away once their task is over |
-| `src/pr.js`      | pull-request repos: what is in flight, finishing merged tasks, the review / stuck-merge sweep, `> After:` |
-| `src/rework.js`  | pull-request repos: a person's review comes back as a `reworkPr<N>` task |
-| `src/notify.js`  | ntfy.sh |
+| File                  | Role                                                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `src/run.js`          | tick loop, one task per tick, `--check`                                                                   |
+| `src/repo.js`         | git preflight: dirt classification, branch, fetch/pull                                                    |
+| `src/queue.js`        | task folder → pending list, attempt-limited pick                                                          |
+| `src/unstick.js`      | the fixer task filed for a task that ran twice without finishing                                          |
+| `src/state.js`        | `~/.kanban-runner/state.json`: blocked reasons, attempt counts, how the last attempt ended                |
+| `src/retry.js`        | the `/todo` prompt: bare on attempt 1, plus the last ending on a retry                                    |
+| `src/herdr.js`        | run Claude in a herdr pane, wait out blocks                                                               |
+| `src/classify.js`     | model + effort tier for a task file                                                                       |
+| `src/pricing.js`      | LiteLLM price list → `claude_model_pricing` rows                                                          |
+| `src/sessionUsage.js` | read a run's transcript → one `claude_usage` row                                                          |
+| `src/sessionLink.js`  | the run's claude.ai/code link, read from its transcript → the status line                                 |
+| `src/status.js`       | the run's one live status comment on its card, edited as it goes                                          |
+| `src/selfUpdate.js`   | fast-forward the runner's own checkout so both machines run the same code                                 |
+| `src/secrets.js`      | gitignored secrets → the peers, on the sweep's clock; `npm run sync-secrets` by hand                      |
+| `src/onboard.js`      | connected boards → clones, `config.json` entries, the peer machine. The daemon calls it on a timer        |
+| `src/offboard.js`     | archived or deleted boards → `config.json` entry and clone removed, secrets kept for a restore            |
+| `src/waiting.js`      | tasks on origin that a blocked clone cannot see yet, so the human hears about each one                    |
+| `src/scaffold.js`     | one clone → plugin enabled, task folder, CLAUDE.md, dependencies                                          |
+| `src/trust.js`        | pre-answer Claude's folder-trust dialog in `~/.claude.json`                                               |
+| `src/followup.js`     | new follow-up file → GitHub issue → Backlog card, file renamed to the issue number                        |
+| `src/screenshots.js`  | a UI task's screenshots → attachments on its card                                                         |
+| `src/claim.js`        | claim an Auto (unaddressed) task on its Kanban card before running it                                     |
+| `src/handover.js`     | at the usage wall, this machine's waiting tasks back to Auto for a free runner                            |
+| `src/worktree.js`     | a task's own branch and worktree, removing it again; for pull-request repos, shipping it as a PR          |
+| `src/land.js`         | push-to-main repos: land a run's commits on the base branch from its worktree, catch the clone up         |
+| `src/sweep.js`        | worktrees and branches a run left behind, put away once their task is over                                |
+| `src/pr.js`           | pull-request repos: what is in flight, finishing merged tasks, the review / stuck-merge sweep, `> After:` |
+| `src/rework.js`       | pull-request repos: a person's review comes back as a `reworkPr<N>` task                                  |
+| `src/notify.js`       | ntfy.sh                                                                                                   |
 
 ## Notes
 

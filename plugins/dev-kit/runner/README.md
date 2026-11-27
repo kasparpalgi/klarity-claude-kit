@@ -704,9 +704,11 @@ is given back, the runner pauses for 30 minutes (handing over or waiting like a 
 `Runner 🔑 logged out` asks for `claude` → `/login` on that machine. Before this, karel's expired
 login failed job 013 three times in seconds, parked it as stuck and filed an unstick task that
 failed the same way. The pause remembers which one it is (`state.json` `cooldownWhy`), so
-the tick log, `--check` and every waiting card say `Claude login expired on windows, run /login
-there, retry 15:06` rather than `usage limit, back …`. A login does not come back by itself:
-the runner retries every 30 minutes until someone logs in on that machine (#28).
+the tick log, `--check` and every waiting card say `Claude login expired on windows as win, run
+/login there, retry 15:06` rather than `usage limit, back …`. A login does not come back by itself:
+the runner retries every 30 minutes until someone logs in on that machine (#28), as the user
+the runner runs as. A `/login` in Windows itself, or as another WSL user, writes another
+`~/.claude/.credentials.json` and the runner keeps waiting (#29).
 
 The pane is not the only place the wall shows. Claude Code also writes it into the session
 transcript, as the API error the session ended on (`src/usage.js` `lastApiError`), and the

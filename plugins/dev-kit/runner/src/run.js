@@ -14,7 +14,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { classify, explicitTier } from "./classify.js";
 import { lastApiError, loginLost, usageLimitHit } from "./usage.js";
@@ -704,7 +704,8 @@ async function runRepo(repoName, repoPath) {
   if (limit) {
     const login = limit.scope === "login";
     const what = login
-      ? `Claude login expired on ${myName(cfg) ?? "this machine"}, run /login there`
+      ? // Name the account: a /login in another shell or user never reaches us (#29).
+        `Claude login expired on ${myName(cfg) ?? "this machine"} as ${userInfo().username}, run /login there`
       : "usage limit";
     state.setCooldown(limit.untilMs, what);
     // Claude Code resumes a walled session by itself at the reset ("continuing
@@ -721,7 +722,7 @@ async function runRepo(repoName, repoPath) {
     log(`⏳ ${filename} — ${what} at ${tier.label}, waiting until ${until}`);
     await notify(
       login ? "Runner 🔑 logged out" : "Runner ⏳ usage limit",
-      `${repoName} ${filename}\n\n${login ? "Run `claude` then /login on that machine. " : ""}Waiting until ${until}`,
+      `${repoName} ${filename}\n\n${login ? "Run `claude` then /login on that machine, as that user. " : ""}Waiting until ${until}`,
     );
     waitingOnLimit = true;
     await say("waiting", { note: waitNote(what, until) });

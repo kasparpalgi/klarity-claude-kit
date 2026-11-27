@@ -167,13 +167,18 @@ export function getLastRepo() {
 
 /**
  * Set account-wide once the CLI itself says the usage wall was hit at the
- * cheapest tier — every repo waits it out rather than burning attempts.
+ * cheapest tier — every repo waits it out rather than burning attempts. `why` is
+ * what the wait is for: an expired login said "usage limit" on every later line, so
+ * karel2 waited for a reset that was a `/login` away (klarity-claude-kit#28).
  */
-export function setCooldown(untilMs) {
+export function setCooldown(untilMs, why = "usage limit") {
   const s = read();
   s.cooldownUntil = untilMs;
+  s.cooldownWhy = why;
   write(s);
 }
+
+export const cooldownWhy = () => read().cooldownWhy ?? "usage limit";
 
 /** 0 once passed, so callers never need to compare timestamps themselves. */
 export function cooldownUntil() {

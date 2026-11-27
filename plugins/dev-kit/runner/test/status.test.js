@@ -214,3 +214,21 @@ test("a walled runner that keeps its tasks says so on each card, once per reset 
     /^⏳ Waiting on windows since .* · usage limit, back 01:25$/,
   );
 });
+
+test("a card waiting on a lost login says to log in, not that it is back at a reset (#28)", async () => {
+  const { kanban, comments } = fakeKanban();
+  const path = join(mkdtempSync(join(tmpdir(), "login-")), "055-x-TODO.md");
+  writeFileSync(path, `_From Kanban card \`${CARD}\`, moved._\n`);
+  const why = "Claude login expired on windows, run /login there";
+  const walled = { repoName: "o/r", tasks: [{ stem: "055-x", path }] };
+  await sayWalled(kanban, {
+    ...walled,
+    machine: "windows",
+    until: "15:06",
+    why,
+  });
+  assert.match(
+    comments[0].content,
+    /· Claude login expired on windows, run \/login there, retry 15:06$/,
+  );
+});

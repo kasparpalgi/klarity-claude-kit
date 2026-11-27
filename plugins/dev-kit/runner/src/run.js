@@ -85,7 +85,7 @@ import { trustProject } from "./trust.js";
 import { findSessionFile, projectDir, recordUsage } from "./sessionUsage.js";
 import { watchLink } from "./sessionLink.js";
 import { todoPrompt } from "./retry.js";
-import { costIn, openStatus, sayWalled } from "./status.js";
+import { costIn, openStatus, sayWalled, waitNote } from "./status.js";
 import * as state from "./state.js";
 import { fileUnstick, fixerOf } from "./unstick.js";
 
@@ -496,6 +496,7 @@ async function runRepo(repoName, repoPath) {
         tasks: pending.filter((t) => t.machine && isMine(t.machine)),
         machine: me,
         until: stamp(walled),
+        why: state.cooldownWhy(),
         log,
       });
       return false;
@@ -701,7 +702,11 @@ async function runRepo(repoName, repoPath) {
       ? null
       : (usageLimitHit(ending) ?? loginLost(ending));
   if (limit) {
-    state.setCooldown(limit.untilMs);
+    const login = limit.scope === "login";
+    const what = login
+      ? `Claude login expired on ${myName(cfg) ?? "this machine"}, run /login there`
+      : "usage limit";
+    state.setCooldown(limit.untilMs, what);
     // Claude Code resumes a walled session by itself at the reset ("continuing
     // automatically at 6:40pm"), and its pane reads idle until then. The hand-over
     // gave ezysmart-web 100 to karel and closed its worktree while servo's session
@@ -713,17 +718,13 @@ async function runRepo(repoName, repoPath) {
     // ~no budget left (task-018) doesn't count toward the 3-strikes skip.
     state.addTry(repoName, taskStem, mtime, -1);
     const until = stamp(limit.untilMs);
-    const login = limit.scope === "login";
-    const what = login
-      ? `Claude login expired on ${myName(cfg) ?? "this machine"}`
-      : "usage limit";
     log(`⏳ ${filename} — ${what} at ${tier.label}, waiting until ${until}`);
     await notify(
       login ? "Runner 🔑 logged out" : "Runner ⏳ usage limit",
       `${repoName} ${filename}\n\n${login ? "Run `claude` then /login on that machine. " : ""}Waiting until ${until}`,
     );
     waitingOnLimit = true;
-    await say("waiting", { note: `${what}, back ${until}` });
+    await say("waiting", { note: waitNote(what, until) });
   }
   // Only our wait ended: the pane still works or waits on a human. Finishing now
   // closed the worktree under a live session (#60). Leave it, like the re-claim
@@ -1212,7 +1213,7 @@ async function tick() {
   await sweepBoards();
   const cooldown = state.cooldownUntil();
   if (cooldown) {
-    log(`⏳ waiting out usage limit until ${stamp(cooldown)}`);
+    log(`⏳ waiting out ${state.cooldownWhy()} until ${stamp(cooldown)}`);
     // Each repo still gets its tick, but only to give tasks away (`handOver`) or to
     // tell their cards this machine waits (#26).
     if (!cfg.machine) return;
@@ -1243,7 +1244,7 @@ async function check() {
   const cooldown = state.cooldownUntil();
   if (cooldown)
     log(
-      `⏳ usage limit — waiting until ${stamp(cooldown)}${cfg.handOver ? ", handing this machine's tasks over" : ""}`,
+      `⏳ ${state.cooldownWhy()} — waiting until ${stamp(cooldown)}${cfg.handOver ? ", handing this machine's tasks over" : ""}`,
     );
   const { blocked } = state.snapshot();
   if (cfg.onboardMinutes && cfg.kanban.apiToken) {

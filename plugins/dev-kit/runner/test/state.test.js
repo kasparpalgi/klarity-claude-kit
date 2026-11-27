@@ -20,6 +20,13 @@ test("a future cooldown is reported back", () => {
   assert.equal(state.cooldownUntil(), until);
 });
 
+test("a cooldown remembers why it waits: a lost login is not a usage limit (#28)", () => {
+  state.setCooldown(Date.now() + 60_000);
+  assert.equal(state.cooldownWhy(), "usage limit");
+  state.setCooldown(Date.now() + 60_000, "Claude login expired on windows");
+  assert.equal(state.cooldownWhy(), "Claude login expired on windows");
+});
+
 test("a past cooldown reads as 0, not the stale timestamp", () => {
   state.setCooldown(Date.now() - 1000);
   assert.equal(state.cooldownUntil(), 0);

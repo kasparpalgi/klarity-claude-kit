@@ -148,6 +148,10 @@ export async function openStatus(
   return say;
 }
 
+/** A wall lifts by itself; a lost login only gets retried, it is back once someone logs in. */
+export const waitNote = (why, until) =>
+  `${why}, ${why === "usage limit" ? "back" : "retry"} ${until}`;
+
 /**
  * A walled runner without `handOver` keeps its tasks until the reset, and their cards
  * said nothing: svelte-todo-kanban's 267, addressed to windows while it shared karel's
@@ -157,7 +161,7 @@ export async function openStatus(
 const told = new Set();
 export async function sayWalled(
   kanban,
-  { repoName, tasks, machine, until, log },
+  { repoName, tasks, machine, until, why = "usage limit", log },
 ) {
   for (const t of tasks) {
     const key = `${repoName}#${t.stem}#${until}`;
@@ -170,7 +174,7 @@ export async function sayWalled(
       machine,
       log,
       first: "waiting",
-      note: `usage limit, back ${until}`,
+      note: waitNote(why, until),
     });
   }
 }

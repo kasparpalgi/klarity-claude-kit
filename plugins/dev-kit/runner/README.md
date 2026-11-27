@@ -703,7 +703,10 @@ in`) is handled the same way: it is the machine's state, not the task's (#27). T
 is given back, the runner pauses for 30 minutes (handing over or waiting like a wall), and
 `Runner 🔑 logged out` asks for `claude` → `/login` on that machine. Before this, karel's expired
 login failed job 013 three times in seconds, parked it as stuck and filed an unstick task that
-failed the same way.
+failed the same way. The pause remembers which one it is (`state.json` `cooldownWhy`), so
+the tick log, `--check` and every waiting card say `Claude login expired on windows, run /login
+there, retry 15:06` rather than `usage limit, back …`. A login does not come back by itself:
+the runner retries every 30 minutes until someone logs in on that machine (#28).
 
 The pane is not the only place the wall shows. Claude Code also writes it into the session
 transcript, as the API error the session ended on (`src/usage.js` `lastApiError`), and the
@@ -740,7 +743,9 @@ moves too. Leave `handOver` off where the board pins someone's cards to that one
 (`windows`). Those cards wait for it. Each of those cards says so once per reset, in its status comment —
 `⏳ Waiting on windows since 22:56 · usage limit, back 26/11/2026, 01:25 EET` — so a waiting
 card does not read as "not picked up" (klarity-claude-kit#26). A card with no such line and
-no `▶ Running` means its runner is not running at all.
+no `▶ Running` means its runner is not running, or has no `apiToken` and so cannot write
+on cards at all. windows had none and karel2's expired login sat silent behind
+server's 055 (#28). Check that machine's log (`journalctl --user -u kanban-runner` on Linux).
 
 ## CLI flags
 
